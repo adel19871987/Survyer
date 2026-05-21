@@ -1,51 +1,28 @@
 import streamlit as st
 import ezdxf
-import tempfile
-import os
-import pandas as pd
 
-st.set_page_config(page_title="حاسبة فيلا 3 أدوار", layout="wide")
-st.title("🏗️ تقرير كميات الفيلا (مفرز آلياً)")
+st.title("🏗️ حاسب كميات الفيلا (3 أدوار)")
 
-uploaded_file = st.file_uploader("ارفع ملف الـ DXF المحول:", type=["dxf"])
+# تحميل الملف
+uploaded_file = st.file_uploader("تم تحميل ملف الفيلا، اضغط هنا للمسح:", type=["dxf"])
 
 if uploaded_file:
-    tfile = tempfile.NamedTemporaryFile(delete=False, suffix=".dxf")
-    tfile.write(uploaded_file.getvalue())
-    tfile.close()
-
     try:
-        doc = ezdxf.readfile(tfile.name)
+        doc = ezdxf.readfile(uploaded_file)
         msp = doc.modelspace()
         
-        # قائمة لتخزين النتائج
-        data = []
-        
-        # فرز العناصر حسب الطبقة (Layer)
-        for entity in msp.query('LWPOLYLINE'):
-            layer = entity.dxf.layer
-            area = entity.area
-            data.append({"الطبقة (العنصر)": layer, "المساحة (م²)": round(area, 2)})
+        # حصر العناصر حسب الطبقات (Layers)
+        layers_count = {}
+        for entity in msp:
+            layer_name = entity.dxf.layer
+            layers_count[layer_name] = layers_count.get(layer_name, 0) + 1
             
-        # تحويل البيانات إلى جدول
-        df = pd.DataFrame(data)
+        st.subheader("📊 العناصر الموجودة في المخطط:")
+        for layer, count in layers_count.items():
+            if count > 5: # إظهار الطبقات الرئيسية فقط لتجنب الزحمة
+                st.write(f"🔹 الطبقة: **{layer}** | عدد العناصر: {count}")
         
-        # تجميع البيانات (حساب العدد والمساحة لكل طبقة)
-        summary = df.groupby("الطبقة (العنصر)").agg(
-            العدد=("المساحة (م²)", "count"),
-            إجمالي_المساحة=("المساحة (م²)", "sum")
-        ).reset_index()
+        st.success("✅ تم مسح المخطط بنجاح! الآن يمكنك تحديد الطبقة التي تريد حساب تكعيبها.")
         
-        st.subheader("📊 جدول الكميات المستخرج:")
-        st.dataframe(summary, use_container_width=True)
-        
-        # زر لتحميل الجدول كملف Excel
-        csv = summary.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 تحميل الجدول كملف Excel/CSV", csv, "Quantities.csv", "text/csv")
-        
-        st.success("✅ تم استخراج الكميات بنجاح! راجع الطبقات في الجدول.")
-
     except Exception as e:
-        st.error(f"خطأ في قراءة ملف DXF: {e}")
-    
-    os.remove(tfile.name)
+        st.error(f"حدث خطأ أثناء قراءة المخطط: {e}")
