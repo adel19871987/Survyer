@@ -5,24 +5,32 @@ import os
 import ezdxf
 from shapely.geometry import Polygon
 
-st.set_page_config(page_title="Survey Tool", layout="wide", page_icon="📐")
-st.title("📐 Survey Tool v4.5 - Select & Export Points")
+st.set_page_config(page_title="أداة المساحة", layout="wide", page_icon="📐")
+
+# تفعيل العربية RTL
+st.markdown("""
+<style>
+   .stApp {direction: rtl;}
+   .st-emotion-cache-1y4p8pa {direction: rtl;}
+</style>
+""", unsafe_allow_html=True)
+
+st.title("📐 أداة المساحة v4.7 - عربي")
 
 if 'elements' not in st.session_state:
     st.session_state.elements = {}
 if 'selected_points' not in st.session_state:
     st.session_state.selected_points = pd.DataFrame()
 
-# Map layer names to engineering elements
+# خريطة تحويل أسماء الـ Layers للعناصر الإنشائية
 ELEMENT_MAP = {
-    'COLUMN': 'Column', 'COL': 'Column', 'COLUMNS': 'Column',
-    'BEAM': 'Beam', 'BEAMS': 'Beam', 'GIRDER': 'Beam',
-    'FOOTING': 'Footing', 'FOOT': 'Footing', 'FOUNDATION': 'Footing',
-    'SLAB': 'Slab', 'WALL': 'Wall',
-    'STAIR': 'Stair', 'STAIRS': 'Stair',
-    'LIFT': 'Lift', 'ELEVATOR': 'Lift',
-    'PILE': 'Pile', 'PILES': 'Pile',
-    'BOUNDARY': 'Boundary', 'BUILDING': 'Building'
+    'COLUMN': 'عمود', 'COL': 'عمود', 'COLUMNS': 'عمود',
+    'BEAM': 'جسر', 'BEAMS': 'جسر', 'GIRDER': 'جسر',
+    'FOOTING': 'قاعدة', 'FOOT': 'قاعدة', 'FOUNDATION': 'قاعدة',
+    'SLAB': 'بلاطة', 'WALL': 'جدار',
+    'STAIR': 'درج', 'STAIRS': 'درج',
+    'LIFT': 'مصعد', 'ELEVATOR': 'مصعد',
+    'PILE': 'خازوق', 'PILES': 'خازوق'
 }
 
 def get_element_name(layer_name):
@@ -42,6 +50,9 @@ def parse_dxf_elements(uploaded_file):
         elements_data = {}
 
         for entity in msp:
+            if not hasattr(entity.dxf, 'layer'):
+                continue
+
             layer = entity.dxf.layer
             element = get_element_name(layer)
 
@@ -49,147 +60,158 @@ def parse_dxf_elements(uploaded_file):
                 elements_data[element] = []
 
             if entity.dxftype() in ['POINT', 'LWPOLYLINE', 'POLYLINE']:
-                pts = [entity.dxf.location] if entity.dxftype() == 'POINT' else entity.get_points()
-                for pt in pts:
-                    elements_data[element].append({
-                        'Select': False,
-                        'Point_ID': f"{element[:3].upper()}-{len(elements_data[element])+1:03d}",
-                        'Element': element,
-                        'Layer': layer,
-                        'Easting': pt[0],
-                        'Northing': pt[1],
-                        'Elevation': pt[2] if len(pt) > 2 else 0.0
-                    })
+                try:
+                    pts = [entity.dxf.location] if entity.dxftype() == 'POINT' else entity.get_points()
+                    for pt in pts:
+                        elements_data[element].append({
+                            'اختيار': False,
+                            'رقم النقطة': f"{element[:2]}-{len(elements_data[element])+1:03d}",
+                            'العنصر': element,
+                            'الطبقة': layer,
+                            'الإحداثي الشرقي': float(pt[0]),
+                            'الإحداثي الشمالي': float(pt[1]),
+                            'المنسوب': float(pt[2]) if len(pt) > 2 else 0.0
+                        })
+                except:
+                    continue
 
         for name in elements_data:
             elements_data[name] = pd.DataFrame(elements_data[name])
 
+        elements_data = {k: v for k, v in elements_data.items() if not v.empty}
         return elements_data
     except Exception as e:
-        st.error(f"Failed to read DXF: {e}")
+        st.error(f"فشل قراءة ملف DXF: {e}")
         return None
     finally:
         os.unlink(tmp_path)
 
-tab1, tab2, tab3, tab4 = st.tabs(["Upload & Split", "Select Points", "Calculations", "Export"])
+tab1, tab2, tab3, tab4 = st.tabs(["رفع وفصل", "اختيار النقاط", "الحسابات", "التصدير"])
 
 with tab1:
-    uploaded = st.file_uploader("Upload DXF File", type=['dxf'])
+    uploaded = st.file_uploader("ارفع ملف DXF", type=['dxf'])
     if uploaded:
-        with st.spinner("Splitting elements..."):
+        with st.spinner("جاري فصل العناصر..."):
             elements = parse_dxf_elements(uploaded)
             if elements:
                 st.session_state.elements = elements
                 st.session_state.selected_points = pd.DataFrame()
-                st.success(f"Split into {len(elements)} elements")
+                total_points = sum(len(df) for df in elements.values())
+                st.success(f"تم العثور على {len(elements)} عنصر يحتوي على {total_points} نقطة")
+            else:
+                st.error("لم يتم العثور على كيانات صالحة في ملف DXF")
 
     if st.session_state.elements:
         for element_name, df in st.session_state.elements.items():
-            with st.expander(f"📍 {element_name} - {len(df)} points", expanded=False):
-                st.dataframe(df[['Point_ID','Element','Layer','Easting','Northing','Elevation']].head(20),
-                             use_container_width=True)
+            with st.expander(f"📍 {element_name} - {len(df)} نقطة", expanded=False):
+                cols_to_show = ['رقم النقطة','العنصر','الطبقة','الإحداثي الشرقي','الإحداثي الشمالي','المنسوب']
+                cols_exist = [c for c in cols_to_show if c in df.columns]
+                if cols_exist:
+                    st.dataframe(df[cols_exist].head(20), use_container_width=True, hide_index=True)
 
 with tab2:
     if st.session_state.elements:
-        st.subheader("Select Points to Export")
-        st.info("Tick the 'Select' checkbox for points you want to export")
+        st.subheader("اختر النقاط للتصدير")
+        st.info("ضع علامة صح على خانة 'اختيار' للنقاط التي تريد تصديرها")
 
         selected_elements = st.multiselect(
-            "Choose Elements to Show",
+            "اختر العناصر للعرض",
             list(st.session_state.elements.keys()),
-            default=list(st.session_state.elements.keys())[:3]
+            default=list(st.session_state.elements.keys())[:3] if len(st.session_state.elements) >= 3 else list(st.session_state.elements.keys())
         )
 
         all_selected = []
         for elem in selected_elements:
             df = st.session_state.elements[elem].copy()
 
-            st.write(f"**{elem}** - {len(df)} points")
+            if df.empty:
+                continue
+
+            st.write(f"**{elem}** - {len(df)} نقطة")
             edited_df = st.data_editor(
                 df,
                 column_config={
-                    "Select": st.column_config.CheckboxColumn("Select", help="Tick to include"),
-                    "Point_ID": st.column_config.TextColumn("Point ID", disabled=True),
-                    "Element": st.column_config.TextColumn("Element", disabled=True),
-                    "Layer": st.column_config.TextColumn("Layer", disabled=True),
-                    "Easting": st.column_config.NumberColumn("Easting", format="%.3f", disabled=True),
-                    "Northing": st.column_config.NumberColumn("Northing", format="%.3f", disabled=True),
-                    "Elevation": st.column_config.NumberColumn("Elevation", format="%.3f", disabled=True)
+                    "اختيار": st.column_config.CheckboxColumn("اختيار"),
+                    "رقم النقطة": st.column_config.TextColumn("رقم النقطة", disabled=True),
+                    "العنصر": st.column_config.TextColumn("العنصر", disabled=True),
+                    "الطبقة": st.column_config.TextColumn("الطبقة", disabled=True),
+                    "الإحداثي الشرقي": st.column_config.NumberColumn("الإحداثي الشرقي", format="%.3f", disabled=True),
+                    "الإحداثي الشمالي": st.column_config.NumberColumn("الإحداثي الشمالي", format="%.3f", disabled=True),
+                    "المنسوب": st.column_config.NumberColumn("المنسوب", format="%.3f", disabled=True)
                 },
                 use_container_width=True,
                 hide_index=True,
                 key=f"editor_{elem}"
             )
 
-            selected_rows = edited_df[edited_df['Select'] == True]
+            selected_rows = edited_df[edited_df['اختيار'] == True]
             if not selected_rows.empty:
-                all_selected.append(selected_rows.drop(columns=['Select']))
+                all_selected.append(selected_rows.drop(columns=['اختيار']))
 
         if all_selected:
             st.session_state.selected_points = pd.concat(all_selected, ignore_index=True)
-            st.success(f"✅ Selected {len(st.session_state.selected_points)} points total")
-            st.dataframe(st.session_state.selected_points,
-                         use_container_width=True, hide_index=True)
+            st.success(f"✅ تم اختيار {len(st.session_state.selected_points)} نقطة")
+            if not st.session_state.selected_points.empty:
+                st.dataframe(st.session_state.selected_points, use_container_width=True, hide_index=True)
         else:
             st.session_state.selected_points = pd.DataFrame()
-            st.warning("No points selected yet")
+            st.warning("لم يتم اختيار أي نقطة بعد")
 
 with tab3:
     if not st.session_state.selected_points.empty:
         df = st.session_state.selected_points
-        st.write(f"**Calculating on {len(df)} selected points**")
+        st.write(f"**الحساب على {len(df)} نقطة مختارة**")
 
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("Calculate Area"):
+            if st.button("حساب المساحة"):
                 try:
-                    coords = list(zip(df['Easting'], df['Northing']))
+                    coords = list(zip(df['الإحداثي الشرقي'], df['الإحداثي الشمالي']))
                     if len(coords) >= 3:
                         poly = Polygon(coords)
                         area = poly.area
-                        st.metric("Area", f"{area:.2f} m²")
+                        st.metric("المساحة", f"{area:.2f} م²")
                     else:
-                        st.error("Need at least 3 points for area")
+                        st.error("تحتاج 3 نقاط على الأقل لحساب المساحة")
                 except Exception as e:
-                    st.error(f"Error: {e}")
+                    st.error(f"خطأ: {e}")
 
         with col2:
-            design_level = st.number_input("Design Level", value=0.0, step=0.1, format="%.3f")
-            if st.button("Calculate Cut & Fill"):
+            design_level = st.number_input("منسوب التصميم", value=0.0, step=0.1, format="%.3f")
+            if st.button("حساب الحفر والردم"):
                 df_calc = df.copy()
-                df_calc['Cut_Fill'] = design_level - df_calc['Elevation']
-                cut = df_calc[df_calc['Cut_Fill'] > 0]['Cut_Fill'].sum()
-                fill = df_calc[df_calc['Cut_Fill'] < 0]['Cut_Fill'].abs().sum()
-                st.metric("Cut", f"{cut:.2f} m³")
-                st.metric("Fill", f"{fill:.2f} m³")
+                df_calc['حفر_ردم'] = design_level - df_calc['المنسوب']
+                cut = df_calc[df_calc['حفر_ردم'] > 0]['حفر_ردم'].sum()
+                fill = df_calc[df_calc['حفر_ردم'] < 0]['حفر_ردم'].abs().sum()
+                st.metric("الحفر", f"{cut:.2f} م³")
+                st.metric("الردم", f"{fill:.2f} م³")
     else:
-        st.warning("Go to 'Select Points' tab and choose points first")
+        st.warning("اذهب لتبويب 'اختيار النقاط' واختر النقاط أولاً")
 
 with tab4:
     if not st.session_state.selected_points.empty:
-        st.subheader("Export Selected Points")
-
-        csv_all = st.session_state.selected_points.to_csv(index=False).encode('utf-8')
+        st.subheader("تصدير النقاط المختارة")
+        csv_all = st.session_state.selected_points.to_csv(index=False).encode('utf-8-sig')
         st.download_button(
-            "📥 Download All Selected Points",
+            "📥 تحميل جميع النقاط المختارة",
             csv_all,
-            "Selected_Points.csv",
+            "النقاط_المختارة.csv",
             "text/csv",
             use_container_width=True
         )
 
-        if st.checkbox("Export each element separately"):
-            for elem in st.session_state.selected_points['Element'].unique():
-                df_elem = st.session_state.selected_points[st.session_state.selected_points['Element'] == elem]
-                csv_elem = df_elem.to_csv(index=False).encode('utf-8')
+        if st.checkbox("تصدير كل عنصر بملف منفصل"):
+            for elem in st.session_state.selected_points['العنصر'].unique():
+                df_elem = st.session_state.selected_points[st.session_state.selected_points['العنصر'] == elem]
+                csv_elem = df_elem.to_csv(index=False).encode('utf-8-sig')
                 st.download_button(
-                    f"📥 Download {elem} ({len(df_elem)} pts)",
+                    f"📥 تحميل {elem} ({len(df_elem)} نقطة)",
                     csv_elem,
                     f"{elem}.csv",
                     "text/csv",
                     use_container_width=True
                 )
     else:
-        st.warning("No points selected yet")
+        st.warning("لم يتم اختيار أي نقاط بعد")
 
-st.caption("v4.5 - Select any points you want and export for Sokkia, Leica, Trimble")
+st.caption("v4.7 - التطبيق بالعربي. يدعم التصدير لـ Sokkia, Leica, Trimble")
