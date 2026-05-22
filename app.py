@@ -8,7 +8,7 @@ from fpdf import FPDF
 import tempfile
 import os
 import ezdxf
-import io
+from ezdxf.recovery import recover
 
 st.set_page_config(page_title="مساحي مصغر", layout="wide", page_icon="📐")
 st.title("📐 مساحي مصغر - أدواتك بالموقع")
@@ -21,40 +21,52 @@ if 'bm_points' not in st.session_state:
     st.session_state.bm_points = None
 
 def parse_dxf(uploaded_file):
-    """يقرأ النقاط من ملف DXF"""
-    content = uploaded_file.read()
-    text_stream = io.StringIO(content.decode('utf-8', errors='ignore'))
-    doc = ezdxf.read(text_stream)
-    msp = doc.modelspace()
-    points = []
+    """يقرأ النقاط من ملف DXF حتى لو كان Binary"""
+    # احفظ الملف مؤقتاً لأن ezdxf يحتاج مسار للـ Binary DXF
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".dxf") as tmp:
+        tmp.write(uploaded_file.read())
+        tmp_path = tmp.name
 
-    for entity in msp:
-        if entity.dxftype() == 'POINT':
-            points.append({
-                'Point': f"P{len(points)+1}",
-                'Easting': entity.dxf.location.x,
-                'Northing': entity.dxf.location.y,
-                'Elevation': entity.dxf.location.z
-            })
-        elif entity.dxftype() == 'TEXT':
-            points.append({
-                'Point': entity.dxf.text,
-                'Easting': entity.dxf.insert.x,
-                'Northing': entity.dxf.insert.y,
-                'Elevation': entity.dxf.insert.z
-            })
-        elif entity.dxftype() in ['LWPOLYLINE', 'POLYLINE']:
-            for i, pt in enumerate(entity.get_points()):
+    try:
+        # استخدم recover عشان يقرأ حتى لو فيه أخطاء بسيطة
+        doc, auditor = recover.readfile(tmp_path)
+
+        if auditor.has_errors:
+            st.warning(f"الملف فيه {auditor.errors} خطأ بسيط، بكمل القراءة")
+
+        msp = doc.modelspace()
+        points = []
+
+        for entity in msp:
+            if entity.dxftype() == 'POINT':
                 points.append({
-                    'Point': f"PL{len(points)+1}",
-                    'Easting': pt[0],
-                    'Northing': pt[1],
-                    'Elevation': pt[2] if len(pt) > 2 else 0
+                    'Point': f"P{len(points)+1}",
+                    'Easting': entity.dxf.location.x,
+                    'Northing': entity.dxf.location.y,
+                    'Elevation': entity.dxf.location.z
                 })
+            elif entity.dxftype() == 'TEXT':
+                points.append({
+                    'Point': entity.dxf.text,
+                    'Easting': entity.dxf.insert.x,
+                    'Northing': entity.dxf.insert.y,
+                    'Elevation': entity.dxf.insert.z
+                })
+            elif entity.dxftype() in ['LWPOLYLINE', 'POLYLINE']:
+                for i, pt in enumerate(entity.get_points()):
+                    points.append({
+                        'Point': f"PL{len(points)+1}",
+                        'Easting': pt[0],
+                        'Northing': pt[1],
+                        'Elevation': pt[2] if len(pt) > 2 else 0
+                    })
 
-    if not points:
-        return None
-    return pd.DataFrame(points)
+        if not points:
+            return None
+        return pd.DataFrame(points)
+
+    finally:
+        os.unlink(tmp_path)
 
 def normalize_columns(df):
     """يوحد أسماء الأعمدة مهما كانت X/Y أو E/N"""
@@ -82,14 +94,15 @@ with tab1:
 
     if uploaded:
         try:
-            if uploaded.name.endswith('.csv'):
-                df = pd.read_csv(uploaded)
-                df = normalize_columns(df)
-            elif uploaded.name.endswith('.dxf'):
-                df = parse_dxf(uploaded)
-                if df is None:
-                    st.error("ما لقيت نقاط في ملف DXF. تأكد إنه فيه POINT أو TEXT أو POLYLINE")
-                    st.stop()
+            with st.spinner("جاري قراءة الملف..."):
+                if uploaded.name.endswith('.csv'):
+                    df = pd.read_csv(uploaded)
+                    df = normalize_columns(df)
+                elif uploaded.name.endswith('.dxf'):
+                    df = parse_dxf(uploaded)
+                    if df is None:
+                        st.error("ما لقيت نقاط في ملف DXF. تأكد إنه فيه POINT أو TEXT أو POLYLINE")
+                        st.stop()
 
             if 'Easting' not in df.columns or 'Northing' not in df.columns:
                 st.error("الملف لازم يحتوي على أعمدة Easting/X و Northing/Y")
@@ -212,4 +225,4 @@ with tab5:
         st.warning("ارفع الملف أول")
 
 st.markdown("---")
-st.caption("مساحي مصغر v3.4 | 2026")
+st.caption("مساحي مصغر v3.5 | 2026")
