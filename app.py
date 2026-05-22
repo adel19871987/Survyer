@@ -13,7 +13,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📐 أداة المساحة v4.9")
+st.title("📐 أداة المساحة v5.1")
 
 if 'elements' not in st.session_state:
     st.session_state.elements = {}
@@ -63,7 +63,7 @@ def parse_dxf_elements(uploaded_file):
                     for pt in pts:
                         elements_data[element].append({
                             'اختيار': False,
-                            'رقم النقطة': f"{element[:2]}-{len(elements_data[element])+1:03d}",
+                            'رقم النقطة': f"{element}-{len(elements_data[element])+1:03d}",
                             'العنصر': element,
                             'الطبقة': layer,
                             'الإحداثي الشرقي': float(pt[0]),
@@ -191,27 +191,47 @@ with tab4:
         st.subheader("تصدير النقاط المختارة")
         df_export = st.session_state.selected_points
 
-        csv_data = df_export.to_csv(index=False).encode('utf-8-sig')
-        st.download_button(
-            "📥 تحميل CSV",
-            csv_data,
-            "النقاط_المختارة.csv",
-            "text/csv",
-            use_container_width=True
-        )
+        col1, col2 = st.columns(2)
+
+        with col1:
+            csv_data = df_export.to_csv(index=False).encode('utf-8-sig')
+            st.download_button(
+                "📥 تصدير كامل CSV",
+                csv_data,
+                "النقاط_المختارة.csv",
+                "text/csv",
+                use_container_width=True
+            )
+
+        with col2:
+            # تصدير للتوتال ستيشن: PointID, E, N, Z فقط
+            ts_df = df_export[['رقم النقطة', 'الإحداثي الشرقي', 'الإحداثي الشمالي', 'المنسوب']].copy()
+            ts_df.columns = ['PointID', 'Easting', 'Northing', 'Elevation']
+            ts_csv = ts_df.to_csv(index=False, float_format='%.3f').encode('utf-8')
+
+            st.download_button(
+                "📡 تصدير للتوتال ستيشن",
+                ts_csv,
+                "TS_Points.csv",
+                "text/csv",
+                use_container_width=True,
+                help="يصدر بصيغة PointID,E,N,Z بدون عربي. مناسبة لـ Sokkia, Leica, Trimble"
+            )
 
         if st.checkbox("تصدير كل عنصر بملف منفصل"):
             for elem in df_export['العنصر'].unique():
                 df_elem = df_export[df_export['العنصر'] == elem]
-                csv_elem = df_elem.to_csv(index=False).encode('utf-8-sig')
+                ts_elem = df_elem[['رقم النقطة', 'الإحداثي الشرقي', 'الإحداثي الشمالي', 'المنسوب']].copy()
+                ts_elem.columns = ['PointID', 'Easting', 'Northing', 'Elevation']
+                csv_elem = ts_elem.to_csv(index=False, float_format='%.3f').encode('utf-8')
                 st.download_button(
-                    f"📥 تحميل {elem} ({len(df_elem)} نقطة)",
+                    f"📡 تحميل {elem} للتوتال ستيشن",
                     csv_elem,
-                    f"{elem}.csv",
+                    f"{elem}_TS.csv",
                     "text/csv",
                     use_container_width=True
                 )
     else:
         st.warning("لم يتم اختيار أي نقاط بعد")
 
-st.caption("v4.9 - يعمل بدون reportlab")
+st.caption("v5.1 - تم تعديل رقم النقطة ليصبح عمود-001 بدل 001-عم")
