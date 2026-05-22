@@ -1,220 +1,195 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-from shapely.geometry import Polygon
-from fpdf import FPDF
 import tempfile
 import os
 import ezdxf
+from shapely.geometry import Polygon
 
-st.set_page_config(page_title="مساحي مصغر", layout="wide", page_icon="📐")
-st.title("📐 مساحي مصغر - أدواتك بالموقع")
+st.set_page_config(page_title="Survey Tool", layout="wide", page_icon="📐")
+st.title("📐 Survey Tool v4.5 - Select & Export Points")
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["رفع النقاط", "الحسابات", "BM & الرفع", "التصدير", "التقرير PDF"])
+if 'elements' not in st.session_state:
+    st.session_state.elements = {}
+if 'selected_points' not in st.session_state:
+    st.session_state.selected_points = pd.DataFrame()
 
-if 'df' not in st.session_state:
-    st.session_state.df = None
-if 'bm_points' not in st.session_state:
-    st.session_state.bm_points = None
+# Map layer names to engineering elements
+ELEMENT_MAP = {
+    'COLUMN': 'Column', 'COL': 'Column', 'COLUMNS': 'Column',
+    'BEAM': 'Beam', 'BEAMS': 'Beam', 'GIRDER': 'Beam',
+    'FOOTING': 'Footing', 'FOOT': 'Footing', 'FOUNDATION': 'Footing',
+    'SLAB': 'Slab', 'WALL': 'Wall',
+    'STAIR': 'Stair', 'STAIRS': 'Stair',
+    'LIFT': 'Lift', 'ELEVATOR': 'Lift',
+    'PILE': 'Pile', 'PILES': 'Pile',
+    'BOUNDARY': 'Boundary', 'BUILDING': 'Building'
+}
 
-def parse_dxf(uploaded_file):
+def get_element_name(layer_name):
+    lname = layer_name.upper()
+    for key, value in ELEMENT_MAP.items():
+        if key in lname:
+            return value
+    return layer_name
+
+def parse_dxf_elements(uploaded_file):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".dxf") as tmp:
         tmp.write(uploaded_file.read())
         tmp_path = tmp.name
-
     try:
-        try:
-            from ezdxf.recovery import recover
-            doc, auditor = recover.readfile(tmp_path)
-        except ImportError:
-            doc = ezdxf.readfile(tmp_path)
-
+        doc = ezdxf.readfile(tmp_path)
         msp = doc.modelspace()
-        points = []
+        elements_data = {}
 
         for entity in msp:
-            if entity.dxftype() == 'POINT':
-                points.append({
-                    'Point': f"P{len(points)+1}",
-                    'Easting': entity.dxf.location.x,
-                    'Northing': entity.dxf.location.y,
-                    'Elevation': entity.dxf.location.z
-                })
-            elif entity.dxftype() == 'TEXT':
-                points.append({
-                    'Point': entity.dxf.text,
-                    'Easting': entity.dxf.insert.x,
-                    'Northing': entity.dxf.insert.y,
-                    'Elevation': entity.dxf.insert.z
-                })
-            elif entity.dxftype() in ['LWPOLYLINE', 'POLYLINE']:
-                for i, pt in enumerate(entity.get_points()):
-                    points.append({
-                        'Point': f"PL{len(points)+1}",
+            layer = entity.dxf.layer
+            element = get_element_name(layer)
+
+            if element not in elements_data:
+                elements_data[element] = []
+
+            if entity.dxftype() in ['POINT', 'LWPOLYLINE', 'POLYLINE']:
+                pts = [entity.dxf.location] if entity.dxftype() == 'POINT' else entity.get_points()
+                for pt in pts:
+                    elements_data[element].append({
+                        'Select': False,
+                        'Point_ID': f"{element[:3].upper()}-{len(elements_data[element])+1:03d}",
+                        'Element': element,
+                        'Layer': layer,
                         'Easting': pt[0],
                         'Northing': pt[1],
-                        'Elevation': pt[2] if len(pt) > 2 else 0
+                        'Elevation': pt[2] if len(pt) > 2 else 0.0
                     })
 
-        if not points:
-            return None
-        return pd.DataFrame(points)
+        for name in elements_data:
+            elements_data[name] = pd.DataFrame(elements_data[name])
 
+        return elements_data
     except Exception as e:
-        st.error(f"فشل قراءة ملف DXF: {e}")
+        st.error(f"Failed to read DXF: {e}")
         return None
     finally:
         os.unlink(tmp_path)
 
-def normalize_columns(df):
-    df.columns = [c.strip().lower() for c in df.columns]
-    col_map = {}
-    for col in df.columns:
-        if col in ['easting', 'e', 'x', 'east']:
-            col_map[col] = 'Easting'
-        elif col in ['northing', 'n', 'y', 'north']:
-            col_map[col] = 'Northing'
-        elif col in ['elevation', 'z', 'elev', 'level']:
-            col_map[col] = 'Elevation'
-        elif col in ['point', 'name', 'id', 'pt']:
-            col_map[col] = 'Point'
-    df = df.rename(columns=col_map)
-
-    if 'Point' not in df.columns:
-        df['Point'] = [f"P{i+1}" for i in range(len(df))]
-    if 'Elevation' not in df.columns:
-        df['Elevation'] = 0
-    return df
+tab1, tab2, tab3, tab4 = st.tabs(["Upload & Split", "Select Points", "Calculations", "Export"])
 
 with tab1:
-    uploaded = st.file_uploader("ارفع ملف النقاط CSV أو DXF", type=['csv','dxf'])
-
+    uploaded = st.file_uploader("Upload DXF File", type=['dxf'])
     if uploaded:
-        with st.spinner("جاري قراءة الملف..."):
-            if uploaded.name.endswith('.csv'):
-                df = pd.read_csv(uploaded)
-                df = normalize_columns(df)
-            elif uploaded.name.endswith('.dxf'):
-                df = parse_dxf(uploaded)
-                if df is None:
-                    st.stop()
+        with st.spinner("Splitting elements..."):
+            elements = parse_dxf_elements(uploaded)
+            if elements:
+                st.session_state.elements = elements
+                st.session_state.selected_points = pd.DataFrame()
+                st.success(f"Split into {len(elements)} elements")
 
-        if df is None or df.empty:
-            st.error("الملف فاضي أو ما فيه نقاط")
-            st.stop()
-
-        if 'Easting' not in df.columns or 'Northing' not in df.columns:
-            st.error("الملف لازم يحتوي على أعمدة Easting/X و Northing/Y")
-            st.stop()
-
-        st.session_state.df = df
-
-        # توليد BM تلقائي
-        minx, maxx = df['Easting'].min(), df['Easting'].max()
-        miny, maxy = df['Northing'].min(), df['Northing'].max()
-        bm_points = pd.DataFrame({
-            'Point': ['BM-01','BM-02','BM-03','BM-04','BM-05','BM-06'],
-            'Easting': [minx, (minx+maxx)/2, maxx, maxx, (minx+maxx)/2, minx],
-            'Northing': [maxy, maxy, maxy, miny, miny, miny],
-            'Elevation': 0,
-            'Note': ['NW','N Mid','NE','SE','S Mid','SW']
-        })
-        st.session_state.bm_points = bm_points
-
-        st.success(f"تم رفع {len(df)} نقطة")
-        st.dataframe(df.head(50), use_container_width=True)
-        st.info("شلت الخريطة عشان التطبيق يكون أسرع. البيانات كلها بالجدول فوق.")
+    if st.session_state.elements:
+        for element_name, df in st.session_state.elements.items():
+            with st.expander(f"📍 {element_name} - {len(df)} points", expanded=False):
+                st.dataframe(df[['Point_ID','Element','Layer','Easting','Northing','Elevation']].head(20),
+                             use_container_width=True)
 
 with tab2:
-    if st.session_state.df is not None:
-        df = st.session_state.df
-        st.subheader("حسابات المساحة والكميات")
+    if st.session_state.elements:
+        st.subheader("Select Points to Export")
+        st.info("Tick the 'Select' checkbox for points you want to export")
+
+        selected_elements = st.multiselect(
+            "Choose Elements to Show",
+            list(st.session_state.elements.keys()),
+            default=list(st.session_state.elements.keys())[:3]
+        )
+
+        all_selected = []
+        for elem in selected_elements:
+            df = st.session_state.elements[elem].copy()
+
+            st.write(f"**{elem}** - {len(df)} points")
+            edited_df = st.data_editor(
+                df,
+                column_config={
+                    "Select": st.column_config.CheckboxColumn("Select", help="Tick to include"),
+                    "Point_ID": st.column_config.TextColumn("Point ID", disabled=True),
+                    "Element": st.column_config.TextColumn("Element", disabled=True),
+                    "Layer": st.column_config.TextColumn("Layer", disabled=True),
+                    "Easting": st.column_config.NumberColumn("Easting", format="%.3f", disabled=True),
+                    "Northing": st.column_config.NumberColumn("Northing", format="%.3f", disabled=True),
+                    "Elevation": st.column_config.NumberColumn("Elevation", format="%.3f", disabled=True)
+                },
+                use_container_width=True,
+                hide_index=True,
+                key=f"editor_{elem}"
+            )
+
+            selected_rows = edited_df[edited_df['Select'] == True]
+            if not selected_rows.empty:
+                all_selected.append(selected_rows.drop(columns=['Select']))
+
+        if all_selected:
+            st.session_state.selected_points = pd.concat(all_selected, ignore_index=True)
+            st.success(f"✅ Selected {len(st.session_state.selected_points)} points total")
+            st.dataframe(st.session_state.selected_points,
+                         use_container_width=True, hide_index=True)
+        else:
+            st.session_state.selected_points = pd.DataFrame()
+            st.warning("No points selected yet")
+
+with tab3:
+    if not st.session_state.selected_points.empty:
+        df = st.session_state.selected_points
+        st.write(f"**Calculating on {len(df)} selected points**")
 
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("حساب المساحة"):
+            if st.button("Calculate Area"):
                 try:
                     coords = list(zip(df['Easting'], df['Northing']))
-                    poly = Polygon(coords)
-                    area_m2 = poly.area
-                    st.session_state.area = area_m2
-                    st.metric("المساحة", f"{area_m2:.2f} م²", f"{area_m2/1000:.3f} دونم")
+                    if len(coords) >= 3:
+                        poly = Polygon(coords)
+                        area = poly.area
+                        st.metric("Area", f"{area:.2f} m²")
+                    else:
+                        st.error("Need at least 3 points for area")
                 except Exception as e:
-                    st.error(f"النقاط لازم تكون مغلقة ومرتبة: {e}")
+                    st.error(f"Error: {e}")
 
         with col2:
-            design_level = st.number_input("منسوب التصميم", value=0.0)
-            if st.button("احسب الكميات"):
-                df['Cut_Fill'] = design_level - df['Elevation']
-                cut_vol = df[df['Cut_Fill'] > 0]['Cut_Fill'].sum()
-                fill_vol = df[df['Cut_Fill'] < 0]['Cut_Fill'].abs().sum()
-                st.session_state.cut_vol = cut_vol
-                st.session_state.fill_vol = fill_vol
-                st.metric("الحفر", f"{cut_vol:.2f} م³")
-                st.metric("الردم", f"{fill_vol:.2f} م³")
+            design_level = st.number_input("Design Level", value=0.0, step=0.1, format="%.3f")
+            if st.button("Calculate Cut & Fill"):
+                df_calc = df.copy()
+                df_calc['Cut_Fill'] = design_level - df_calc['Elevation']
+                cut = df_calc[df_calc['Cut_Fill'] > 0]['Cut_Fill'].sum()
+                fill = df_calc[df_calc['Cut_Fill'] < 0]['Cut_Fill'].abs().sum()
+                st.metric("Cut", f"{cut:.2f} m³")
+                st.metric("Fill", f"{fill:.2f} m³")
     else:
-        st.warning("ارفع الملف أول من تبويب رفع النقاط")
-
-with tab3:
-    if st.session_state.bm_points is not None:
-        st.subheader("نقاط BM")
-        st.dataframe(st.session_state.bm_points, use_container_width=True)
-        st.subheader("خطة الرفع")
-        st.write("1. نصب الجهاز على BM-01")
-        st.write("2. اربط Backsight على BM-02")
-        st.write("3. ابدأ الرفع من النقطة P1")
-    else:
-        st.warning("ارفع الملف أول")
+        st.warning("Go to 'Select Points' tab and choose points first")
 
 with tab4:
-    if st.session_state.df is not None:
-        csv_all = st.session_state.df.to_csv(index=False).encode('utf-8')
-        st.download_button("تحميل كل النقاط.csv", csv_all, "All_Points.csv", "text/csv")
+    if not st.session_state.selected_points.empty:
+        st.subheader("Export Selected Points")
 
-        csv_bm = st.session_state.bm_points.to_csv(index=False).encode('utf-8')
-        st.download_button("تحميل BM_Points.csv", csv_bm, "BM_Points.csv", "text/csv")
+        csv_all = st.session_state.selected_points.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            "📥 Download All Selected Points",
+            csv_all,
+            "Selected_Points.csv",
+            "text/csv",
+            use_container_width=True
+        )
 
-        st.info("الملفات بصيغة CSV وتشتغل على Sokkia, Leica, Trimble")
+        if st.checkbox("Export each element separately"):
+            for elem in st.session_state.selected_points['Element'].unique():
+                df_elem = st.session_state.selected_points[st.session_state.selected_points['Element'] == elem]
+                csv_elem = df_elem.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    f"📥 Download {elem} ({len(df_elem)} pts)",
+                    csv_elem,
+                    f"{elem}.csv",
+                    "text/csv",
+                    use_container_width=True
+                )
     else:
-        st.warning("ارفع الملف أول")
+        st.warning("No points selected yet")
 
-with tab5:
-    st.subheader("تصدير تقرير الموقع PDF")
-
-    if st.session_state.df is not None:
-        project_name = st.text_input("اسم المشروع", "مشروع الموقع")
-        contractor = st.text_input("اسم المقاول", "اسمك")
-
-        if st.button("إنشاء التقرير"):
-            pdf = FPDF()
-            pdf.add_page()
-            pdf.set_font("Arial", size=12)
-
-            pdf.cell(200, 10, txt="تقرير مساحي ميداني", ln=True, align='C')
-            pdf.ln(10)
-            pdf.cell(200, 10, txt=f"المشروع: {project_name}", ln=True)
-            pdf.cell(200, 10, txt=f"المقاول: {contractor}", ln=True)
-            pdf.cell(200, 10, txt=f"عدد النقاط: {len(st.session_state.df)}", ln=True)
-
-            if 'area' in st.session_state:
-                pdf.cell(200, 10, txt=f"المساحة: {st.session_state.area:.2f} م²", ln=True)
-            if 'cut_vol' in st.session_state:
-                pdf.cell(200, 10, txt=f"الحفر: {st.session_state.cut_vol:.2f} م³", ln=True)
-                pdf.cell(200, 10, txt=f"الردم: {st.session_state.fill_vol:.2f} م³", ln=True)
-
-            pdf.ln(10)
-            pdf.cell(200, 10, txt="جدول النقاط:", ln=True)
-
-            for i, row in st.session_state.df.head(20).iterrows():
-                pdf.cell(200, 8, txt=f"{row['Point']}: E={row['Easting']:.3f}, N={row['Northing']:.3f}", ln=True)
-
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                pdf.output(tmp.name)
-                with open(tmp.name, "rb") as f:
-                    st.download_button("تحميل التقرير PDF", f, "Survey_Report.pdf", "application/pdf")
-                os.unlink(tmp.name)
-    else:
-        st.warning("ارفع الملف أول")
-
-st.markdown("---")
-st.caption("مساحي مصغر v3.9 خفيف | 2026")
+st.caption("v4.5 - Select any points you want and export for Sokkia, Leica, Trimble")
