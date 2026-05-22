@@ -22,13 +22,11 @@ if 'bm_points' not in st.session_state:
 
 def parse_dxf(uploaded_file):
     """يقرأ النقاط من ملف DXF حتى لو كان Binary"""
-    # احفظ الملف مؤقتاً لأن ezdxf يحتاج مسار للـ Binary DXF
     with tempfile.NamedTemporaryFile(delete=False, suffix=".dxf") as tmp:
         tmp.write(uploaded_file.read())
         tmp_path = tmp.name
 
     try:
-        # استخدم recover عشان يقرأ حتى لو فيه أخطاء بسيطة
         doc, auditor = recover.readfile(tmp_path)
 
         if auditor.has_errors:
@@ -69,7 +67,6 @@ def parse_dxf(uploaded_file):
         os.unlink(tmp_path)
 
 def normalize_columns(df):
-    """يوحد أسماء الأعمدة مهما كانت X/Y أو E/N"""
     df.columns = [c.strip().lower() for c in df.columns]
     col_map = {}
     for col in df.columns:
@@ -101,7 +98,7 @@ with tab1:
                 elif uploaded.name.endswith('.dxf'):
                     df = parse_dxf(uploaded)
                     if df is None:
-                        st.error("ما لقيت نقاط في ملف DXF. تأكد إنه فيه POINT أو TEXT أو POLYLINE")
+                        st.error("ما لقيت نقاط في ملف DXF")
                         st.stop()
 
             if 'Easting' not in df.columns or 'Northing' not in df.columns:
@@ -110,7 +107,6 @@ with tab1:
 
             st.session_state.df = df
 
-            # توليد BM تلقائي
             minx, maxx = df['Easting'].min(), df['Easting'].max()
             miny, maxy = df['Northing'].min(), df['Northing'].max()
             bm_points = pd.DataFrame({
@@ -167,10 +163,6 @@ with tab3:
     if st.session_state.bm_points is not None:
         st.subheader("نقاط BM")
         st.dataframe(st.session_state.bm_points, use_container_width=True)
-        st.subheader("خطة الرفع")
-        st.write("1. نصب الجهاز على BM-01")
-        st.write("2. اربط Backsight على BM-02")
-        st.write("3. ابدأ الرفع من النقطة P1")
     else:
         st.warning("ارفع الملف أول")
 
@@ -178,11 +170,8 @@ with tab4:
     if st.session_state.df is not None:
         csv_all = st.session_state.df.to_csv(index=False).encode('utf-8')
         st.download_button("تحميل كل النقاط.csv", csv_all, "All_Points.csv", "text/csv")
-
         csv_bm = st.session_state.bm_points.to_csv(index=False).encode('utf-8')
         st.download_button("تحميل BM_Points.csv", csv_bm, "BM_Points.csv", "text/csv")
-
-        st.info("الملفات بصيغة CSV وتشتغل على Sokkia, Leica, Trimble")
     else:
         st.warning("ارفع الملف أول")
 
@@ -210,12 +199,6 @@ with tab5:
                 pdf.cell(200, 10, txt=f"الحفر: {st.session_state.cut_vol:.2f} م³", ln=True)
                 pdf.cell(200, 10, txt=f"الردم: {st.session_state.fill_vol:.2f} م³", ln=True)
 
-            pdf.ln(10)
-            pdf.cell(200, 10, txt="جدول النقاط:", ln=True)
-
-            for i, row in st.session_state.df.head(20).iterrows():
-                pdf.cell(200, 8, txt=f"{row['Point']}: E={row['Easting']:.3f}, N={row['Northing']:.3f}", ln=True)
-
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
                 pdf.output(tmp.name)
                 with open(tmp.name, "rb") as f:
@@ -225,4 +208,4 @@ with tab5:
         st.warning("ارفع الملف أول")
 
 st.markdown("---")
-st.caption("مساحي مصغر v3.5 | 2026")
+st.caption("مساحي مصغر v3.6 | 2026")
