@@ -5,4 +5,4 @@ folium
 streamlit-folium
 shapely
 fpdf
-ezdxf
+ezdxf>=1.0.0
