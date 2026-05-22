@@ -4,16 +4,12 @@ import tempfile
 import os
 import ezdxf
 from shapely.geometry import Polygon
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib import colors
 
 st.set_page_config(page_title="أداة المساحة", layout="wide", page_icon="📐")
 
 st.markdown("""
 <style>
- .stApp {direction: rtl;}
+.stApp {direction: rtl;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -54,7 +50,7 @@ def parse_dxf_elements(uploaded_file):
             if not hasattr(entity.dxf, 'layer'):
                 continue
             layer = entity.dxf.layer.strip()
-            if not layer or layer == '0': # تجاهل الطبقة الفاضية وطبقة 0
+            if not layer or layer == '0':
                 continue
 
             element = get_element_name(layer)
@@ -77,46 +73,17 @@ def parse_dxf_elements(uploaded_file):
                 except:
                     continue
 
-        # حول لقوائم DataFrame وشيل الفاضي
         final_data = {}
         for name, rows in elements_data.items():
             df = pd.DataFrame(rows)
             if not df.empty and len(df) > 0:
                 final_data[name] = df
-
         return final_data
     except Exception as e:
         st.error(f"فشل قراءة ملف DXF: {e}")
         return None
     finally:
         os.unlink(tmp_path)
-
-def create_pdf(df):
-    buffer = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-    doc = SimpleDocTemplate(buffer.name, pagesize=A4)
-    styles = getSampleStyleSheet()
-    elements = []
-
-    elements.append(Paragraph("تقرير النقاط المساحية", styles['Title']))
-    elements.append(Spacer(1, 12))
-    elements.append(Paragraph(f"عدد النقاط: {len(df)}", styles['Normal']))
-    elements.append(Spacer(1, 12))
-
-    # خلي الجدول أصغر لو النقاط كثيرة
-    display_df = df[['رقم النقطة','العنصر','الإحداثي الشرقي','الإحداثي الشمالي','المنسوب']].head(100)
-    data = [display_df.columns.tolist()] + display_df.values.tolist()
-
-    table = Table(data, colWidths=[80, 80, 100, 100, 80])
-    table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('GRID', (0, 0), (-1, -1), 1, colors.black),
-        ('FONTSIZE', (0, 0), (-1, -1), 8),
-    ]))
-    elements.append(table)
-    doc.build(elements)
-    return buffer.name
 
 tab1, tab2, tab3, tab4 = st.tabs(["رفع وفصل", "اختيار النقاط", "الحسابات", "التصدير"])
 
@@ -135,7 +102,7 @@ with tab1:
 
     if st.session_state.elements:
         for element_name, df in st.session_state.elements.items():
-            if df is not None and not df.empty: # التشييك المهم هنا
+            if df is not None and not df.empty:
                 with st.expander(f"📍 {element_name} - {len(df)} نقطة", expanded=False):
                     st.dataframe(df[['رقم النقطة','العنصر','الطبقة','الإحداثي الشرقي','الإحداثي الشمالي','المنسوب']].head(20),
                                 use_container_width=True, hide_index=True)
@@ -154,7 +121,7 @@ with tab2:
         all_selected = []
         for elem in selected_elements:
             if elem in st.session_state.elements:
-                df = st.session_state.elements[elem].copy()
+                df = st.session_state.elements[elem]
                 if df.empty:
                     continue
 
@@ -222,33 +189,29 @@ with tab3:
 with tab4:
     if not st.session_state.selected_points.empty:
         st.subheader("تصدير النقاط المختارة")
-
         df_export = st.session_state.selected_points
 
-        col1, col2 = st.columns(2)
-        with col1:
-            csv_data = df_export.to_csv(index=False).encode('utf-8-sig')
-            st.download_button(
-                "📥 تحميل CSV",
-                csv_data,
-                "النقاط_المختارة.csv",
-                "text/csv",
-                use_container_width=True
-            )
+        csv_data = df_export.to_csv(index=False).encode('utf-8-sig')
+        st.download_button(
+            "📥 تحميل CSV",
+            csv_data,
+            "النقاط_المختارة.csv",
+            "text/csv",
+            use_container_width=True
+        )
 
-        with col2:
-            if st.button("📄 إنشاء PDF", use_container_width=True):
-                with st.spinner("جاري إنشاء PDF..."):
-                    pdf_path = create_pdf(df_export)
-                    with open(pdf_path, "rb") as pdf_file:
-                        st.download_button(
-                            "تحميل PDF",
-                            pdf_file,
-                            "تقرير_النقاط.pdf",
-                            "application/pdf"
-                        )
-                    os.unlink(pdf_path)
+        if st.checkbox("تصدير كل عنصر بملف منفصل"):
+            for elem in df_export['العنصر'].unique():
+                df_elem = df_export[df_export['العنصر'] == elem]
+                csv_elem = df_elem.to_csv(index=False).encode('utf-8-sig')
+                st.download_button(
+                    f"📥 تحميل {elem} ({len(df_elem)} نقطة)",
+                    csv_elem,
+                    f"{elem}.csv",
+                    "text/csv",
+                    use_container_width=True
+                )
     else:
         st.warning("لم يتم اختيار أي نقاط بعد")
 
-st.caption("v4.9 - تم حل مشكلة AttributeError")
+st.caption("v4.9 - يعمل بدون reportlab")
