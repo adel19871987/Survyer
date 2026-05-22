@@ -8,6 +8,7 @@ from fpdf import FPDF
 import tempfile
 import os
 import ezdxf
+import io
 
 st.set_page_config(page_title="مساحي مصغر", layout="wide", page_icon="📐")
 st.title("📐 مساحي مصغر - أدواتك بالموقع")
@@ -20,9 +21,10 @@ if 'bm_points' not in st.session_state:
     st.session_state.bm_points = None
 
 def parse_dxf(uploaded_file):
-    """يقرأ النقاط من ملف DXF بدون الحاجة لمسار ملف"""
+    """يقرأ النقاط من ملف DXF"""
     content = uploaded_file.read()
-    doc = ezdxf.read(content)
+    text_stream = io.StringIO(content.decode('utf-8', errors='ignore'))
+    doc = ezdxf.read(text_stream)
     msp = doc.modelspace()
     points = []
 
@@ -210,4 +212,4 @@ with tab5:
         st.warning("ارفع الملف أول")
 
 st.markdown("---")
-st.caption("مساحي مصغر v3.3 | 2026")
+st.caption("مساحي مصغر v3.4 | 2026")
