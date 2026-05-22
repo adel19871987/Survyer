@@ -7,7 +7,7 @@ from shapely.geometry import Polygon
 from fpdf import FPDF
 import tempfile
 import os
-import geopandas as gpd
+import ezdxf
 
 st.set_page_config(page_title="مساحي مصغر", layout="wide", page_icon="📐")
 st.title("📐 مساحي مصغر - أدواتك بالموقع")
@@ -19,24 +19,81 @@ if 'df' not in st.session_state:
 if 'bm_points' not in st.session_state:
     st.session_state.bm_points = None
 
+def parse_dxf(uploaded_file):
+    """يقرأ النقاط من ملف DXF"""
+    doc = ezdxf.readfile(uploaded_file)
+    msp = doc.modelspace()
+    points = []
+
+    for entity in msp:
+        if entity.dxftype() == 'POINT':
+            points.append({
+                'Point': f"P{len(points)+1}",
+                'Easting': entity.dxf.location.x,
+                'Northing': entity.dxf.location.y,
+                'Elevation': entity.dxf.location.z
+            })
+        elif entity.dxftype() == 'TEXT':
+            points.append({
+                'Point': entity.dxf.text,
+                'Easting': entity.dxf.insert.x,
+                'Northing': entity.dxf.insert.y,
+                'Elevation': entity.dxf.insert.z
+            })
+        elif entity.dxftype() == 'LWPOLYLINE':
+            for i, pt in enumerate(entity.get_points()):
+                points.append({
+                    'Point': f"PL{len(points)+1}",
+                    'Easting': pt[0],
+                    'Northing': pt[1],
+                    'Elevation': pt[2] if len(pt) > 2 else 0
+                })
+
+    if not points:
+        return None
+    return pd.DataFrame(points)
+
+def normalize_columns(df):
+    """يوحد أسماء الأعمدة مهما كانت X/Y أو E/N"""
+    df.columns = [c.strip().lower() for c in df.columns]
+    col_map = {}
+    for col in df.columns:
+        if col in ['easting', 'e', 'x', 'east']:
+            col_map[col] = 'Easting'
+        elif col in ['northing', 'n', 'y', 'north']:
+            col_map[col] = 'Northing'
+        elif col in ['elevation', 'z', 'elev', 'level']:
+            col_map[col] = 'Elevation'
+        elif col in ['point', 'name', 'id', 'pt']:
+            col_map[col] = 'Point'
+    df = df.rename(columns=col_map)
+
+    if 'Point' not in df.columns:
+        df['Point'] = [f"P{i+1}" for i in range(len(df))]
+    if 'Elevation' not in df.columns:
+        df['Elevation'] = 0
+    return df
+
 with tab1:
-    uploaded = st.file_uploader("ارفع ملف النقاط CSV, KML, GeoJSON", type=['csv','kml','geojson','json'])
-    
+    uploaded = st.file_uploader("ارفع ملف النقاط CSV أو DXF",
+                                type=['csv','dxf'])
+
     if uploaded:
         if uploaded.name.endswith('.csv'):
             df = pd.read_csv(uploaded)
-            df.columns = [c.strip() for c in df.columns]
-        else:
-            gdf = gpd.read_file(uploaded)
-            df = pd.DataFrame({
-                'Point': [f"P{i+1}" for i in range(len(gdf))],
-                'Easting': gdf.geometry.x,
-                'Northing': gdf.geometry.y,
-                'Elevation': 0
-            })
-        
+            df = normalize_columns(df)
+        elif uploaded.name.endswith('.dxf'):
+            df = parse_dxf(uploaded)
+            if df is None:
+                st.error("ما لقيت نقاط في ملف DXF. تأكد إنه فيه POINT أو TEXT أو POLYLINE")
+                st.stop()
+
+        if 'Easting' not in df.columns or 'Northing' not in df.columns:
+            st.error("الملف لازم يحتوي على أعمدة Easting/X و Northing/Y")
+            st.stop()
+
         st.session_state.df = df
-        
+
         # توليد BM تلقائي
         minx, maxx = df['Easting'].min(), df['Easting'].max()
         miny, maxy = df['Northing'].min(), df['Northing'].max()
@@ -48,10 +105,10 @@ with tab1:
             'Note': ['NW','N Mid','NE','SE','S Mid','SW']
         })
         st.session_state.bm_points = bm_points
-        
+
         st.success(f"تم رفع {len(df)} نقطة")
         st.dataframe(df.head(20), use_container_width=True)
-        
+
         m = folium.Map(location=[df['Northing'].mean(), df['Easting'].mean()], zoom_start=15)
         for _, row in df.iterrows():
             folium.CircleMarker([row['Northing'], row['Easting']], radius=3, popup=row['Point']).add_to(m)
@@ -61,7 +118,7 @@ with tab2:
     if st.session_state.df is not None:
         df = st.session_state.df
         st.subheader("حسابات المساحة والكميات")
-        
+
         col1, col2 = st.columns(2)
         with col1:
             if st.button("حساب المساحة"):
@@ -73,7 +130,7 @@ with tab2:
                     st.metric("المساحة", f"{area_m2:.2f} م²", f"{area_m2/1000:.3f} دونم")
                 except:
                     st.error("النقاط لازم تكون مغلقة ومرتبة")
-        
+
         with col2:
             design_level = st.number_input("منسوب التصميم", value=0.0)
             if st.button("احسب الكميات"):
@@ -102,44 +159,44 @@ with tab4:
     if st.session_state.df is not None:
         csv_all = st.session_state.df.to_csv(index=False).encode('utf-8')
         st.download_button("تحميل كل النقاط.csv", csv_all, "All_Points.csv", "text/csv")
-        
+
         csv_bm = st.session_state.bm_points.to_csv(index=False).encode('utf-8')
         st.download_button("تحميل BM_Points.csv", csv_bm, "BM_Points.csv", "text/csv")
-        
+
         st.info("الملفات بصيغة CSV وتشتغل على Sokkia, Leica, Trimble")
     else:
         st.warning("ارفع الملف أول")
 
 with tab5:
     st.subheader("تصدير تقرير الموقع PDF")
-    
+
     if st.session_state.df is not None:
         project_name = st.text_input("اسم المشروع", "مشروع الموقع")
         contractor = st.text_input("اسم المقاول", "اسمك")
-        
+
         if st.button("إنشاء التقرير"):
             pdf = FPDF()
             pdf.add_page()
             pdf.set_font("Arial", size=12)
-            
+
             pdf.cell(200, 10, txt="تقرير مساحي ميداني", ln=True, align='C')
             pdf.ln(10)
             pdf.cell(200, 10, txt=f"المشروع: {project_name}", ln=True)
             pdf.cell(200, 10, txt=f"المقاول: {contractor}", ln=True)
             pdf.cell(200, 10, txt=f"عدد النقاط: {len(st.session_state.df)}", ln=True)
-            
+
             if 'area' in st.session_state:
                 pdf.cell(200, 10, txt=f"المساحة: {st.session_state.area:.2f} م²", ln=True)
             if 'cut_vol' in st.session_state:
                 pdf.cell(200, 10, txt=f"الحفر: {st.session_state.cut_vol:.2f} م³", ln=True)
                 pdf.cell(200, 10, txt=f"الردم: {st.session_state.fill_vol:.2f} م³", ln=True)
-            
+
             pdf.ln(10)
             pdf.cell(200, 10, txt="جدول النقاط:", ln=True)
-            
+
             for i, row in st.session_state.df.head(20).iterrows():
                 pdf.cell(200, 8, txt=f"{row['Point']}: E={row['Easting']:.3f}, N={row['Northing']:.3f}", ln=True)
-            
+
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
                 pdf.output(tmp.name)
                 with open(tmp.name, "rb") as f:
@@ -149,4 +206,4 @@ with tab5:
         st.warning("ارفع الملف أول")
 
 st.markdown("---")
-st.caption("مساحي مصغر v3.0 | 2026")
+st.caption("مساحي مصغر v3.1 | 2026")
