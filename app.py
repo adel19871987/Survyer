@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import folium
-from streamlit_folium import st_folium
 from shapely.geometry import Polygon
 from fpdf import FPDF
 import tempfile
@@ -20,13 +18,11 @@ if 'bm_points' not in st.session_state:
     st.session_state.bm_points = None
 
 def parse_dxf(uploaded_file):
-    """يقرأ النقاط من ملف DXF - يشتغل مع كل إصدارات ezdxf"""
     with tempfile.NamedTemporaryFile(delete=False, suffix=".dxf") as tmp:
         tmp.write(uploaded_file.read())
         tmp_path = tmp.name
 
     try:
-        # يحاول recovery أولاً، لو فشل يستخدم readfile العادي
         try:
             from ezdxf.recovery import recover
             doc, auditor = recover.readfile(tmp_path)
@@ -126,12 +122,8 @@ with tab1:
         st.session_state.bm_points = bm_points
 
         st.success(f"تم رفع {len(df)} نقطة")
-        st.dataframe(df.head(20), use_container_width=True)
-
-        m = folium.Map(location=[df['Northing'].mean(), df['Easting'].mean()], zoom_start=15)
-        for _, row in df.iterrows():
-            folium.CircleMarker([row['Northing'], row['Easting']], radius=3, popup=row['Point']).add_to(m)
-        st_folium(m, width=700, height=400)
+        st.dataframe(df.head(50), use_container_width=True)
+        st.info("شلت الخريطة عشان التطبيق يكون أسرع. البيانات كلها بالجدول فوق.")
 
 with tab2:
     if st.session_state.df is not None:
@@ -225,4 +217,4 @@ with tab5:
         st.warning("ارفع الملف أول")
 
 st.markdown("---")
-st.caption("مساحي مصغر v3.8 | 2026")
+st.caption("مساحي مصغر v3.9 خفيف | 2026")
