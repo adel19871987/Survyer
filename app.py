@@ -11,7 +11,7 @@ st.title("🏗️ Professional Survey & Quantity Management System")
 st.markdown("---")
 
 # ==========================================
-# 🔄 Initialize Session States for Reset (Go Back)
+# 🔄 Initialize Session States for Reset
 # ==========================================
 if 'dxf_key' not in st.session_state:
     st.session_state['dxf_key'] = 0
@@ -53,7 +53,7 @@ def calc_distance(x1, y1, x2, y2):
     return math.hypot(x2 - x1, y2 - y1)
 
 # ==========================================
-# Sidebar Settings & Reset Button
+# Sidebar Settings
 # ==========================================
 st.sidebar.header("⚙️ System Settings")
 
@@ -64,6 +64,7 @@ if st.sidebar.button("🔄 Reset System (Go Back)", use_container_width=True, ty
 
 st.sidebar.markdown("---")
 device_type = st.sidebar.selectbox("Export Device Type:", ["Leica (CSV)", "Topcon (TXT)", "Generic (CSV)"])
+id_format = st.sidebar.selectbox("Point ID Format (For Device):", ["Purely Numeric (101, 102...)", "Short Code (F56-1)", "Full Descriptive (Footing_56_P1)"])
 tolerance = st.sidebar.number_input("Allowed Tolerance (meters):", value=0.02, step=0.01)
 
 # ==========================================
@@ -112,7 +113,7 @@ if uploaded_dxf:
             category_counters[category] += 1
             item_num = category_counters[category]
             
-            # حساب مركز العنصر بدقة
+            # حساب المركز الهندسي بدقة للاعتماد عليه في الترتيب الشبكي
             cx = sum(v[0] for v in vertices) / len(vertices)
             cy = sum(v[1] for v in vertices) / len(vertices)
             
@@ -128,32 +129,32 @@ if uploaded_dxf:
                     min_text_dist = d
                     matched_text = t
             
-            # فلترة ذكية لأسماء الطبقات المزعجة مثل 02ZAPATAS
             generic_keywords = ['0', 'DEFPOINTS', 'ZAPATA', 'ZAPATAS', 'FOOTING', 'FOOTINGS', 'COLUMN', 'COLUMNS', 'BEAM', 'BEAMS', 'CONCRETE']
             layer_upper = layer.upper().strip()
             is_generic_layer = any(gk in layer_upper for gk in generic_keywords) or layer_upper == ''
             
-            # تنظيف المسميات المأخوذة من النصوص أو الطبقات
             if matched_text and min_text_dist <= (max_dim * 0.9):
                 txt = matched_text['text']
-                if txt.isdigit(): # إذا كان النص مجرد رقم مثل "3" يتم تحويله لـ F3 أو C3
-                    if category == "Footings": final_prefix = f"F{txt}"
-                    elif category == "Columns": final_prefix = f"C{txt}"
-                    else: final_prefix = f"Obj{txt}"
+                if txt.isdigit():
+                    if category == "Footings": final_prefix, short_prefix = f"Footing_{txt}", f"F{txt}"
+                    elif category == "Columns": final_prefix, short_prefix = f"Column_{txt}", f"C{txt}"
+                    else: final_prefix, short_prefix = f"Obj_{txt}", f"O{txt}"
                 else:
                     final_prefix = txt
+                    short_prefix = txt.replace(" ", "")[:6]
             elif not is_generic_layer and len(layer_upper) <= 12:
                 final_prefix = layer
+                short_prefix = layer.replace(" ", "")[:6]
             else:
-                if category == "Footings": final_prefix = f"Footing_{item_num}"
-                elif category == "Columns": final_prefix = f"Column_{item_num}"
-                elif category == "Beams": final_prefix = f"Beam_{item_num}"
-                else: final_prefix = f"Object_{item_num}"
+                if category == "Footings": final_prefix, short_prefix = f"Footing_{item_num}", f"F{item_num}"
+                elif category == "Columns": final_prefix, short_prefix = f"Column_{item_num}", f"C{item_num}"
+                elif category == "Beams": final_prefix, short_prefix = f"Beam_{item_num}", f"B{item_num}"
+                else: final_prefix, short_prefix = f"Object_{item_num}", f"O{item_num}"
             
-            # حفظ النقاط مع الاحتفاظ بإحداثيات المركز والترتيب الداخلي لمنع العشوائية
             for i, v in enumerate(vertices):
                 all_points.append({
                     "Point_ID": f"{final_prefix}_P{i+1}", 
+                    "Short_ID": f"{short_prefix}-{i+1}",
                     "North_Y": v[1], 
                     "East_X": v[0], 
                     "Category": category,
@@ -166,7 +167,7 @@ if uploaded_dxf:
         os.remove(path)
         
         # ---------------------------------------------------------
-        # Unified Tab System
+        # Tabs System
         # ---------------------------------------------------------
         tab1, tab2, tab3, tab4 = st.tabs([
             "🗺️ 1. Map & Quantities", 
@@ -175,7 +176,6 @@ if uploaded_dxf:
             "✅ 4. As-Built Verification"
         ])
         
-        # --- Tab 1: Map & Quantities ---
         with tab1:
             col1, col2 = st.columns([1, 1])
             with col1:
@@ -187,26 +187,20 @@ if uploaded_dxf:
                         Total_Area_m2=("Area (m2)", "sum")
                     ).reset_index()
                     st.dataframe(summary, use_container_width=True)
-            
             with col2:
                 st.subheader("🗺️ Visual Layout Preview")
                 if not df_all_points.empty:
                     fig, ax = plt.subplots(figsize=(6, 4))
                     categories = df_all_points['Category'].unique()
                     colors = plt.cm.get_cmap('tab10', len(categories))
-                    
                     for i, cat in enumerate(categories):
                         cat_data = df_all_points[df_all_points['Category'] == cat]
                         ax.scatter(cat_data['East_X'], cat_data['North_Y'], label=cat, color=colors(i), s=10)
-                    
                     ax.set_aspect('equal')
-                    ax.set_xlabel('East (X)')
-                    ax.set_ylabel('North (Y)')
                     ax.legend(loc='upper right', fontsize='small')
                     ax.grid(True, linestyle='--', alpha=0.5)
                     st.pyplot(fig)
 
-        # --- Tab 2: Staking & Offsets ---
         with tab2:
             st.subheader("📍 Prepare Staking Points & Offsets")
             categories_available = df_all_points["Category"].unique()
@@ -220,38 +214,59 @@ if uploaded_dxf:
             if selected_cat:
                 filtered_points = df_all_points[df_all_points['Category'].isin(selected_cat)].copy()
                 
-                # 🌟 الترتيب الهندسي الصارم: ترتيب العناصر جغرافياً أولاً ثم رص الأركان التابعة لها بالتسلسل
+                # 🌟 ذكاء اصطناعي لترتيب الصفوف (Grid Row Clustering) لمنع القفز العشوائي بالموقع
+                unique_ys = sorted(filtered_points['Elem_CY'].unique(), reverse=True)
+                row_map = {}
+                current_row = 0
+                if unique_ys:
+                    last_y = unique_ys[0]
+                    for y in unique_ys:
+                        if (last_y - y) > 1.5: # تفاوت 1.5 متر لتجميع العناصر في صف أفقي واحد
+                            current_row += 1
+                        row_map[y] = current_row
+                        last_y = y
+                filtered_points['Row_ID'] = filtered_points['Elem_CY'].map(row_map)
+                
+                # ترتيب صارم: الصفوف أولاً من الأعلى لأسفل، ثم العناصر داخل الصف من اليسار لليمين، ثم أركان القاعدة
                 filtered_points = filtered_points.sort_values(
-                    by=["Elem_CY", "Elem_CX", "Elem_Order"], 
-                    ascending=[False, True, True]
+                    by=["Row_ID", "Elem_CX", "Elem_Order"], 
+                    ascending=[True, True, True]
                 )
                 
                 filtered_points["East_X"] = filtered_points["East_X"] + offset_x
                 filtered_points["North_Y"] = filtered_points["North_Y"] + offset_y
                 
-                export_points = filtered_points[["Point_ID", "North_Y", "East_X"]]
+                # تطبيق صيغة التسمية المختارة لمنع مشاكل اختفاء أرقام الأركان على الشاشة
+                if id_format == "Purely Numeric (101, 102...)":
+                    filtered_points["Export_ID"] = range(101, 101 + len(filtered_points))
+                elif id_format == "Short Code (F56-1)":
+                    filtered_points["Export_ID"] = filtered_points["Short_ID"]
+                else:
+                    filtered_points["Export_ID"] = filtered_points["Point_ID"]
+                
+                export_points = filtered_points[["Export_ID", "North_Y", "East_X"]]
                 export_points["Elevation_Z"] = 0.0
                 
                 sep = ',' if device_type != "Topcon (TXT)" else ' '
                 csv_data = export_points.to_csv(index=False, sep=sep, header=False)
                 
-                st.success(f"Successfully prepared {len(export_points)} points in continuous structural order.")
+                st.success(f"📌 Successfully prepared {len(export_points)} points in continuous Grid-Row order.")
+                
+                if device_type == "Topcon (TXT)":
+                    st.warning("💡 تنبيه للمراجعة: بما أنك اخترت نظام توبكون، تم الفصل بين الإحداثيات بـ (مسافات) بناءً على معايير مصانع توبكون. ظهور الملف في عمود واحد على الإكسل بالموبايل أمر طبيعي جداً لأن إكسل لا يدعم الفراغات تلقائياً، وتأكد أن جهاز التوتال ستيشن في الميدان سيقرأ الأعمدة بشكل منفصل وممتاز.")
+                
                 st.download_button(f"📥 Download {device_type.split()[0]} File", csv_data, "Staking_Points.txt", "text/plain")
 
-        # --- Tab 3: Earthworks ---
         with tab3:
             st.subheader("🚜 Estimated Earthworks Volumetric Calculation")
             if data_list:
                 total_area = summary['Total_Area_m2'].sum()
                 st.info(f"Total Structural Footprint Area: **{round(total_area, 2)}** m²")
-                
                 col_z1, col_z2 = st.columns(2)
                 current_level = col_z1.number_input("Natural Ground Level (NGL):", value=1.0, step=0.1)
                 target_level = col_z2.number_input("Target Design Level (Excavation):", value=0.0, step=0.1)
-                
                 depth = current_level - target_level
                 volume = total_area * depth
-                
                 st.markdown("---")
                 if depth > 0:
                     st.error(f"⚠️ Site requires EXCAVATION (CUT) depth: {round(depth, 2)} meters.")
@@ -262,27 +277,22 @@ if uploaded_dxf:
                 else:
                     st.info("Ground is exactly at the target design level.")
 
-        # --- Tab 4: As-Built Verification ---
         with tab4:
             st.subheader("🔍 Site Inspection & As-Built Verification Report")
             asbuilt_file = st.file_uploader("Upload field survey file (CSV/TXT):", type=["csv", "txt"], key=f"asbuilt_upload_{st.session_state['asbuilt_key']}")
-            
             if asbuilt_file:
                 sep_asb = ',' if asbuilt_file.name.endswith('.csv') else ' '
                 df_asb = pd.read_csv(asbuilt_file, sep=sep_asb, header=None, names=["ID", "Y", "X", "Z"])
-                
                 results = []
                 for index, row in df_asb.iterrows():
                     asb_y, asb_x = row['Y'], row['X']
                     min_dist = float('inf')
                     nearest_point = None
-                    
                     for _, design_row in df_all_points.iterrows():
                         dist = calc_distance(asb_x, asb_y, design_row['East_X'], design_row['North_Y'])
                         if dist < min_dist:
                             min_dist = dist
                             nearest_point = design_row
-                            
                     status = "✅ Match" if min_dist <= tolerance else "❌ Deviation"
                     results.append({
                         "Surveyed Point ID": row['ID'],
@@ -290,59 +300,39 @@ if uploaded_dxf:
                         "Deviation (m)": round(min_dist, 3),
                         "Status": status
                     })
-                
                 df_results = pd.DataFrame(results)
                 df_results.insert(0, 'No.', range(1, 1 + len(df_results)))
-                
                 def highlight_errors(val):
                     color = '#ffcccc' if val == '❌ Deviation' else '#ccffcc'
                     return f'background-color: {color}'
-                
                 st.dataframe(df_results.style.map(highlight_errors, subset=['Status']), use_container_width=True)
                 
-                # HTML Report Generator
-                st.markdown("---")
+                # HTML Report
                 html_table = df_results.to_html(index=False, classes='report-table')
                 html_report = f"""
                 <html>
-                <head>
-                    <meta charset="utf-8">
+                <head><meta charset="utf-8">
                     <style>
-                        body {{ font-family: 'Arial', sans-serif; direction: ltr; text-align: left; padding: 30px; }}
-                        .header-title {{ color: #1E3A8A; text-align: center; border-bottom: 3px solid #1E3A8A; padding-bottom: 15px; margin-bottom: 20px; }}
-                        .info-section {{ background-color: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 20px; }}
-                        .report-table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
-                        .report-table th, .report-table td {{ border: 1px solid #cbd5e1; padding: 12px; text-align: center; font-size: 14px; }}
-                        .report-table th {{ background-color: #f1f5f9; color: #1e293b; font-weight: bold; }}
+                        body {{ font-family: 'Arial', sans-serif; direction: ltr; padding: 30px; }}
+                        .header-title {{ color: #1E3A8A; text-align: center; border-bottom: 3px solid #1E3A8A; padding-bottom: 15px; }}
+                        .info-section {{ background-color: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; margin: 20px 0; }}
+                        .report-table {{ width: 100%; border-collapse: collapse; }}
+                        .report-table th, .report-table td {{ border: 1px solid #cbd5e1; padding: 12px; text-align: center; }}
+                        .report-table th {{ background-color: #f1f5f9; }}
                         .match {{ background-color: #dcfce7; color: #15803d; font-weight: bold; }}
                         .deviation {{ background-color: #fee2e2; color: #b91c1c; font-weight: bold; }}
-                        .footer {{ margin-top: 40px; text-align: center; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 10px; }}
                     </style>
                 </head>
                 <body>
-                    <div class="header-title">
-                        <h2>📊 As-Built Survey Verification Report</h2>
-                    </div>
+                    <div class="header-title"><h2>📊 As-Built Survey Verification Report</h2></div>
                     <div class="info-section">
-                        <p><strong>📂 Survey File Name:</strong> {asbuilt_file.name}</p>
-                        <p><strong>⏱️ Report Date/Time:</strong> {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}</p>
-                        <p><strong>🎯 Approved Tolerance Limit:</strong> {tolerance} m ({int(tolerance*1000)} mm)</p>
+                        <p><strong>📂 File:</strong> {asbuilt_file.name}</p>
+                        <p><strong>🎯 Tolerance Limit:</strong> {tolerance} m</p>
                     </div>
                     {html_table.replace('<td>✅ Match</td>', '<td class="match">✅ Match</td>').replace('<td>❌ Deviation</td>', '<td class="deviation">❌ Deviation</td>')}
-                    <div class="footer">
-                        <p>Generated automatically by Smart Surveyor Pro System</p>
-                    </div>
                 </body>
                 </html>
                 """
-                
-                st.download_button(
-                    label="📥 Download Official Report for PDF Printing",
-                    data=html_report,
-                    file_name=f"AsBuilt_Report_{asbuilt_file.name.split('.')[0]}.html",
-                    mime="text/html",
-                    use_container_width=True
-                )
-                
+                st.download_button("📥 Download Official Report", html_report, "AsBuilt_Report.html", "text/html", use_container_width=True)
     except Exception as e:
-        st.error(f"An error occurred while processing files: {e}")
+        st.error(f"Error: {e}")
