@@ -19,7 +19,7 @@ if 'asbuilt_key' not in st.session_state:
     st.session_state['asbuilt_key'] = 0
 
 # ==========================================
-# Core Core Functions & Mathematics
+# Core Functions & Mathematics
 # ==========================================
 def calculate_area(vertices):
     area = 0.0
@@ -199,14 +199,18 @@ if uploaded_dxf:
                 with col_q2:
                     st.markdown("**🎨 Visual Spatial Layout Map:**")
                     fig, ax = plt.subplots(figsize=(6, 3.5))
-                    cats = df_all_points['Category'].unique()
-                    for i, cat in enumerate(cats):
-                        c_data = df_all_points[df_all_points['Category'] == cat]
-                        ax.scatter(c_data['East_X'], c_data['North_Y'], label=cat, s=12)
-                    ax.set_aspect('equal')
-                    ax.legend(loc='upper right', fontsize='xs')
-                    ax.grid(True, linestyle='--', alpha=0.4)
+                    
+                    if not df_all_points.empty:
+                        cats_avail = df_all_points['Category'].unique()
+                        for cat in cats_avail:
+                            c_data = df_all_points[df_all_points['Category'] == cat]
+                            ax.scatter(c_data['East_X'], c_data['North_Y'], label=cat, s=12)
+                        
+                        ax.set_aspect('equal')
+                        ax.legend(loc='upper right', fontsize='small') # Fixed Matplotlib size bug
+                        ax.grid(True, linestyle='--', alpha=0.4)
                     st.pyplot(fig)
+                    plt.close(fig)
             else:
                 st.info("No closed geometric elements found to extract areas.")
 
@@ -227,7 +231,7 @@ if uploaded_dxf:
                 if sel_cat:
                     df_stk = df_all_points[df_all_points['Category'].isin(sel_cat)].copy()
                     
-                    # Row Clustering Logic to avoid jumps
+                    # Row Clustering Logic
                     u_ys = sorted(df_stk['Elem_CY'].unique(), reverse=True)
                     r_map = {}
                     curr_r = 0
@@ -259,7 +263,6 @@ if uploaded_dxf:
                     st.success(f"Successfully sequenced {len(final_out)} points.")
                     st.download_button(f"📥 Export Field Points ({device_type})", txt_data, "Field_Points.txt", "text/plain")
                     
-                    # 🌟 BONUS: CAD Sketch Generation
                     try:
                         out_dxf = ezdxf.new('R2010')
                         out_msp = out_dxf.modelspace()
@@ -269,7 +272,7 @@ if uploaded_dxf:
                         with open("Staking_Sketch.dxf", "rb") as f_dxf:
                             st.download_button("📥 Download CAD Staking Sketch (.DXF kroke)", f_dxf.read(), "Staking_Sketch.dxf", "application/dxf")
                         os.remove("Staking_Sketch.dxf")
-                    except Exception as e: pass
+                    except: pass
 
         # ------------------------------------------
         # Tab 3: Coordinate Shift & Rotate
@@ -283,11 +286,9 @@ if uploaded_dxf:
             
             if not df_all_points.empty:
                 df_trans = df_all_points.copy()
-                # Find bounding center for rotation anchor
                 m_cx = df_trans["East_X"].mean()
                 m_cy = df_trans["North_Y"].mean()
                 
-                # Apply Rotation then Shift
                 if rot_ang != 0:
                     rotated = [rotate_point(r["East_X"], r["North_Y"], m_cx, m_cy, -rot_ang) for _, r in df_trans.iterrows()]
                     df_trans["East_X"] = [p[0] for p in rotated]
@@ -309,14 +310,13 @@ if uploaded_dxf:
             if grid_lines:
                 st.info(f"Detected {len(grid_lines)} primary geometric grid segments inside CAD file.")
                 intersections = []
-                # Simple mathematical line intersection check
                 for i in range(len(grid_lines)):
                     for j in range(i + 1, len(grid_lines)):
                         p1, p2 = grid_lines[i][0], grid_lines[i][1]
                         p3, p4 = grid_lines[j][0], grid_lines[j][1]
                         
                         den = (p4.x - p3.x) * (p2.y - p1.y) - (p4.y - p3.y) * (p2.x - p1.x)
-                        if abs(den) < 1e-5: continue # Parallel
+                        if abs(den) < 1e-5: continue
                         
                         ua = ((p4.x - p3.x) * (p1.y - p3.y) - (p4.y - p3.y) * (p1.x - p3.x)) / den
                         ub = ((p2.x - p1.x) * (p1.y - p3.y) - (p2.y - p1.y) * (p1.x - p3.x)) / den
@@ -353,13 +353,11 @@ if uploaded_dxf:
                 b_thickness = col_b2.selectbox("Block Thickness Type:", [0.20, 0.15, 0.10])
                 wastage = col_b3.number_input("Material Breakage Wastage Allowance (%):", value=5.0, step=1.0)
                 
-                # Standard calculations based on 40x20x20 cm blocks
                 wall_area = total_w_len * w_height
-                blocks_per_m2 = 12.5 # standard factor
+                blocks_per_m2 = 12.5 
                 total_blocks = wall_area * blocks_per_m2 * (1 + wastage/100)
                 
-                # Mortar consumption
-                cement_bags = wall_area * 0.25 # approx. bags per m2
+                cement_bags = wall_area * 0.25 
                 sand_m3 = wall_area * 0.03
                 
                 st.markdown("---")
@@ -423,7 +421,6 @@ if uploaded_dxf:
                 df_res_f = pd.DataFrame(chk_res)
                 st.dataframe(df_res_f.style.map(lambda v: 'background-color: #ffcccc' if 'Deviation' in str(v) else 'background-color: #ccffcc', subset=['Inspection Status']), use_container_width=True)
                 
-                # HTML Engineering Export Report
                 h_table = df_res_f.to_html(index=False)
                 html_out = f"<html><body style='font-family:sans-serif; padding:20px;'><h2 style='color:#1E3A8A;'>As-Built Survey Verification Matrix</h2><p>Tolerance Used: {tolerance}m</p>{h_table}</body></html>"
                 st.download_button("📥 Save Official PDF/HTML Inspection Report", html_out, "AsBuilt_Verification.html", "text/html", use_container_width=True)
