@@ -57,7 +57,6 @@ def calc_distance(x1, y1, x2, y2):
 # ==========================================
 st.sidebar.header("⚙️ System Settings")
 
-# 🌟 زر العودة إلى الوراء وإعادة تعيين النظام 🌟
 if st.sidebar.button("🔄 Reset System (Go Back)", use_container_width=True, type="primary"):
     st.session_state['dxf_key'] += 1
     st.session_state['asbuilt_key'] += 1
@@ -113,6 +112,7 @@ if uploaded_dxf:
             category_counters[category] += 1
             item_num = category_counters[category]
             
+            # حساب مركز العنصر بدقة
             cx = sum(v[0] for v in vertices) / len(vertices)
             cy = sum(v[1] for v in vertices) / len(vertices)
             
@@ -128,12 +128,21 @@ if uploaded_dxf:
                     min_text_dist = d
                     matched_text = t
             
-            generic_layers = ['0', 'DEFPOINTS', 'ZAPATA', 'ZAPATAS', 'FOOTING', 'FOOTINGS', 'COLUMN', 'COLUMNS', 'BEAM', 'BEAMS', 'CONCRETE']
+            # فلترة ذكية لأسماء الطبقات المزعجة مثل 02ZAPATAS
+            generic_keywords = ['0', 'DEFPOINTS', 'ZAPATA', 'ZAPATAS', 'FOOTING', 'FOOTINGS', 'COLUMN', 'COLUMNS', 'BEAM', 'BEAMS', 'CONCRETE']
             layer_upper = layer.upper().strip()
+            is_generic_layer = any(gk in layer_upper for gk in generic_keywords) or layer_upper == ''
             
+            # تنظيف المسميات المأخوذة من النصوص أو الطبقات
             if matched_text and min_text_dist <= (max_dim * 0.9):
-                final_prefix = matched_text['text']
-            elif layer_upper not in generic_layers and len(layer_upper) <= 10:
+                txt = matched_text['text']
+                if txt.isdigit(): # إذا كان النص مجرد رقم مثل "3" يتم تحويله لـ F3 أو C3
+                    if category == "Footings": final_prefix = f"F{txt}"
+                    elif category == "Columns": final_prefix = f"C{txt}"
+                    else: final_prefix = f"Obj{txt}"
+                else:
+                    final_prefix = txt
+            elif not is_generic_layer and len(layer_upper) <= 12:
                 final_prefix = layer
             else:
                 if category == "Footings": final_prefix = f"Footing_{item_num}"
@@ -141,12 +150,16 @@ if uploaded_dxf:
                 elif category == "Beams": final_prefix = f"Beam_{item_num}"
                 else: final_prefix = f"Object_{item_num}"
             
+            # حفظ النقاط مع الاحتفاظ بإحداثيات المركز والترتيب الداخلي لمنع العشوائية
             for i, v in enumerate(vertices):
                 all_points.append({
                     "Point_ID": f"{final_prefix}_P{i+1}", 
                     "North_Y": v[1], 
                     "East_X": v[0], 
-                    "Category": category
+                    "Category": category,
+                    "Elem_CX": cx,
+                    "Elem_CY": cy,
+                    "Elem_Order": i + 1
                 })
                 
         df_all_points = pd.DataFrame(all_points)
@@ -206,7 +219,12 @@ if uploaded_dxf:
             
             if selected_cat:
                 filtered_points = df_all_points[df_all_points['Category'].isin(selected_cat)].copy()
-                filtered_points = filtered_points.sort_values(by=["North_Y", "East_X"])
+                
+                # 🌟 الترتيب الهندسي الصارم: ترتيب العناصر جغرافياً أولاً ثم رص الأركان التابعة لها بالتسلسل
+                filtered_points = filtered_points.sort_values(
+                    by=["Elem_CY", "Elem_CX", "Elem_Order"], 
+                    ascending=[False, True, True]
+                )
                 
                 filtered_points["East_X"] = filtered_points["East_X"] + offset_x
                 filtered_points["North_Y"] = filtered_points["North_Y"] + offset_y
@@ -217,7 +235,7 @@ if uploaded_dxf:
                 sep = ',' if device_type != "Topcon (TXT)" else ' '
                 csv_data = export_points.to_csv(index=False, sep=sep, header=False)
                 
-                st.success(f"Successfully prepared {len(export_points)} points.")
+                st.success(f"Successfully prepared {len(export_points)} points in continuous structural order.")
                 st.download_button(f"📥 Download {device_type.split()[0]} File", csv_data, "Staking_Points.txt", "text/plain")
 
         # --- Tab 3: Earthworks ---
