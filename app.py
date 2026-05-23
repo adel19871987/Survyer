@@ -5,12 +5,12 @@ import os
 import math
 import matplotlib.pyplot as plt
 
-st.set_page_config(page_title="المساح الذكي | Smart Surveyor", layout="wide")
-st.title("🏗️ نظام إدارة المساحة والكميات الاحترافي - النسخة الشاملة")
+st.set_page_config(page_title="Smart Surveyor Pro", layout="wide")
+st.title("🏗️ Professional Survey & Quantity Management System")
 st.markdown("---")
 
 # ==========================================
-# الدوال الأساسية (Functions)
+# Core Functions
 # ==========================================
 def calculate_area(vertices):
     area = 0.0
@@ -22,11 +22,11 @@ def calculate_area(vertices):
 
 def classify_layer(layer_name):
     layer_name = layer_name.upper()
-    if any(x in layer_name for x in ['ZAPATA', 'FOOT', 'قاعدة', 'FND']): return "قواعد (Footings)"
-    if any(x in layer_name for x in ['COLUMN', 'COL', 'عمود']): return "أعمدة (Columns)"
-    if any(x in layer_name for x in ['BEAM', 'جسر', 'TIE']): return "جسور (Beams)"
-    if any(x in layer_name for x in ['BOUNDARY', 'SITE', 'حد']): return "حدود الأرض (Boundary)"
-    return "أخرى (Others)"
+    if any(x in layer_name for x in ['ZAPATA', 'FOOT', 'قاعدة', 'FND']): return "Footings"
+    if any(x in layer_name for x in ['COLUMN', 'COL', 'عمود']): return "Columns"
+    if any(x in layer_name for x in ['BEAM', 'جسر', 'TIE']): return "Beams"
+    if any(x in layer_name for x in ['BOUNDARY', 'SITE', 'حد']): return "Boundary"
+    return "Others"
 
 def read_dxf(uploaded_file):
     temp_file_path = f"temp_{uploaded_file.name}"
@@ -39,17 +39,17 @@ def calc_distance(x1, y1, x2, y2):
     return math.hypot(x2 - x1, y2 - y1)
 
 # ==========================================
-# الإعدادات الجانبية
+# Sidebar Settings
 # ==========================================
-st.sidebar.header("⚙️ إعدادات النظام")
-device_type = st.sidebar.selectbox("نوع الجهاز للتصدير:", ["Leica (CSV)", "Topcon (TXT)", "Generic (CSV)"])
-tolerance = st.sidebar.number_input("السماحية المقبولة للتنفيذ (بالمتر):", value=0.02, step=0.01)
+st.sidebar.header("⚙️ System Settings")
+device_type = st.sidebar.selectbox("Export Device Type:", ["Leica (CSV)", "Topcon (TXT)", "Generic (CSV)"])
+tolerance = st.sidebar.number_input("Allowed Tolerance (meters):", value=0.02, step=0.01)
 
 # ==========================================
-# معالجة المخطط الأساسي
+# Main DXF Processing
 # ==========================================
-st.subheader("📁 رفع المخطط الأساسي (DXF)")
-uploaded_dxf = st.file_uploader("ارفع المخطط المعتمد هنا:", type=["dxf"])
+st.subheader("📁 Upload Base Layout (DXF)")
+uploaded_dxf = st.file_uploader("Upload approved DXF layout here:", type=["dxf"])
 
 if uploaded_dxf:
     try:
@@ -66,7 +66,7 @@ if uploaded_dxf:
             area = calculate_area(vertices)
             
             if area > 0:
-                data_list.append({"التصنيف": category, "اسم الطبقة": layer, "المساحة (م٢)": area})
+                data_list.append({"Category": category, "Layer Name": layer, "Area (m2)": area})
             
             for i, v in enumerate(vertices):
                 all_points.append({
@@ -80,30 +80,30 @@ if uploaded_dxf:
         os.remove(path)
         
         # ---------------------------------------------------------
-        # نظام التبويبات الشامل
+        # Unified Tab System (English Only)
         # ---------------------------------------------------------
         tab1, tab2, tab3, tab4 = st.tabs([
-            "🗺️ 1. الخريطة والكميات", 
-            "📍 2. التوقيع والأوفسيت", 
-            "🚜 3. حساب الحفر والردم",
-            "✅ 4. المطابقة والتقارير (As-Built)"
+            "🗺️ 1. Map & Quantities", 
+            "📍 2. Staking & Offset", 
+            "🚜 3. Earthworks (Cut/Fill)",
+            "✅ 4. As-Built Verification"
         ])
         
-        # --- التبويب الأول: الخريطة التفاعلية والكميات ---
+        # --- Tab 1: Map & Quantities ---
         with tab1:
             col1, col2 = st.columns([1, 1])
             with col1:
-                st.subheader("📊 جدول الكميات")
+                st.subheader("📊 Quantity Takeoff Summary")
                 if data_list:
                     df_quantities = pd.DataFrame(data_list)
-                    summary = df_quantities.groupby(["التصنيف", "اسم الطبقة"]).agg(
-                        العدد=("المساحة (م٢)", "count"),
-                        إجمالي_المساحة=("المساحة (م٢)", "sum")
+                    summary = df_quantities.groupby(["Category", "Layer Name"]).agg(
+                        Count=("Area (m2)", "count"),
+                        Total_Area_m2=("Area (m2)", "sum")
                     ).reset_index()
                     st.dataframe(summary, use_container_width=True)
             
             with col2:
-                st.subheader("🗺️ المعاينة البصرية للمخطط")
+                st.subheader("🗺️ Visual Layout Preview")
                 if not df_all_points.empty:
                     fig, ax = plt.subplots(figsize=(6, 4))
                     categories = df_all_points['Category'].unique()
@@ -111,9 +111,7 @@ if uploaded_dxf:
                     
                     for i, cat in enumerate(categories):
                         cat_data = df_all_points[df_all_points['Category'] == cat]
-                        # استخراج المسمى الإنجليزي لتفادي مشكلة الخط العربي المقلوب بالسحابة
-                        eng_label = cat.split('(')[-1].replace(')', '') if '(' in cat else cat
-                        ax.scatter(cat_data['East_X'], cat_data['North_Y'], label=eng_label, color=colors(i), s=10)
+                        ax.scatter(cat_data['East_X'], cat_data['North_Y'], label=cat, color=colors(i), s=10)
                     
                     ax.set_aspect('equal')
                     ax.set_xlabel('East (X)')
@@ -122,22 +120,21 @@ if uploaded_dxf:
                     ax.grid(True, linestyle='--', alpha=0.5)
                     st.pyplot(fig)
 
-        # --- التبويب الثاني: التوقيع ونقاط الأوفسيت ---
+        # --- Tab 2: Staking & Offsets ---
         with tab2:
-            st.subheader("📍 تجهيز نقاط التوقيع وإنشاء الأوفسيت")
+            st.subheader("📍 Prepare Staking Points & Offsets")
             categories_available = df_all_points["Category"].unique()
-            selected_cat = st.multiselect("اختر العناصر للتوقيع:", categories_available, default=categories_available)
+            selected_cat = st.multiselect("Select elements for staking:", categories_available, default=categories_available)
             
-            st.markdown("**إنشاء نقاط مساعدة (Offset) لتجاوز العوائق:**")
+            st.markdown("**Create Offset Points (To bypass obstacles):**")
             col_off1, col_off2 = st.columns(2)
-            offset_x = col_off1.number_input("إزاحة باتجاه الشرق (X) بالمتر:", value=0.0, step=0.5)
-            offset_y = col_off2.number_input("إزاحة باتجاه الشمال (Y) بالمتر:", value=0.0, step=0.5)
+            offset_x = col_off1.number_input("East Offset (X) in meters:", value=0.0, step=0.5)
+            offset_y = col_off2.number_input("North Offset (Y) in meters:", value=0.0, step=0.5)
             
             if selected_cat:
                 filtered_points = df_all_points[df_all_points['Category'].isin(selected_cat)].copy()
                 filtered_points = filtered_points.sort_values(by=["North_Y", "East_X"])
                 
-                # تطبيق الأوفسيت
                 filtered_points["East_X"] = filtered_points["East_X"] + offset_x
                 filtered_points["North_Y"] = filtered_points["North_Y"] + offset_y
                 
@@ -147,37 +144,37 @@ if uploaded_dxf:
                 sep = ',' if device_type != "Topcon (TXT)" else ' '
                 csv_data = export_points.to_csv(index=False, sep=sep, header=False)
                 
-                st.success(f"تم تجهيز {len(export_points)} نقطة (مع الإزاحة إذا تم إدخالها).")
-                st.download_button(f"📥 تحميل ملف {device_type.split()[0]}", csv_data, "Staking_Points.txt", "text/plain")
+                st.success(f"Successfully prepared {len(export_points)} points (with offset if applied).")
+                st.download_button(f"📥 Download {device_type.split()[0]} File", csv_data, "Staking_Points.txt", "text/plain")
 
-        # --- التبويب الثالث: حساب الحفر والردم ---
+        # --- Tab 3: Earthworks ---
         with tab3:
-            st.subheader("🚜 حساب كميات الحفر والردم التقديرية")
+            st.subheader("🚜 Estimated Earthworks Volumetric Calculation")
             if data_list:
-                total_area = summary['إجمالي_المساحة'].sum()
-                st.info(f"إجمالي المساحات المغلقة في المخطط: **{round(total_area, 2)}** متر مربع")
+                total_area = summary['Total_Area_m2'].sum()
+                st.info(f"Total Structural Footprint Area: **{round(total_area, 2)}** m²")
                 
                 col_z1, col_z2 = st.columns(2)
-                current_level = col_z1.number_input("منسوب الأرض الطبيعية الحالي (NGS):", value=1.0, step=0.1)
-                target_level = col_z2.number_input("المنسوب التصميمي المطلوب (الحفرية):", value=0.0, step=0.1)
+                current_level = col_z1.number_input("Natural Ground Level (NGL):", value=1.0, step=0.1)
+                target_level = col_z2.number_input("Target Design Level (Excavation):", value=0.0, step=0.1)
                 
                 depth = current_level - target_level
                 volume = total_area * depth
                 
                 st.markdown("---")
                 if depth > 0:
-                    st.error(f"⚠️ الموقع يحتاج إلى **حفر** بعمق: {round(depth, 2)} متر.")
-                    st.error(f"📉 إجمالي كمية الحفر التقديرية: **{round(volume, 2)}** متر مكعب.")
+                    st.error(f"⚠️ Site requires EXCAVATION (CUT) depth: {round(depth, 2)} meters.")
+                    st.error(f"📉 Total Estimated CUT Volume: **{round(volume, 2)}** m³.")
                 elif depth < 0:
-                    st.success(f"⚠️ الموقع يحتاج إلى **ردم** بارتفاع: {round(abs(depth), 2)} متر.")
-                    st.success(f"📈 إجمالي كمية الردم التقديرية: **{round(abs(volume), 2)}** متر مكعب.")
+                    st.success(f"⚠️ Site requires EMBANKMENT (FILL) height: {round(abs(depth), 2)} meters.")
+                    st.success(f"📈 Total Estimated FILL Volume: **{round(abs(volume), 2)}** m³.")
                 else:
-                    st.info("الأرض على المنسوب المطلوب تماماً (0 مكعبات).")
+                    st.info("Ground is exactly at the target design level (Zero Volumetrics).")
 
-        # --- التبويب الرابع: المطابقة والتقارير ---
+        # --- Tab 4: As-Built Verification ---
         with tab4:
-            st.subheader("🔍 استلام الموقع وإصدار التقرير")
-            asbuilt_file = st.file_uploader("ارفع ملف الرصد الميداني (CSV/TXT):", type=["csv", "txt"])
+            st.subheader("🔍 Site Inspection & As-Built Verification Report")
+            asbuilt_file = st.file_uploader("Upload field survey file (CSV/TXT):", type=["csv", "txt"])
             
             if asbuilt_file:
                 sep_asb = ',' if asbuilt_file.name.endswith('.csv') else ' '
@@ -195,24 +192,67 @@ if uploaded_dxf:
                             min_dist = dist
                             nearest_point = design_row
                             
-                    status = "✅ مطابق" if min_dist <= tolerance else "❌ يوجد انحراف"
+                    status = "✅ Match" if min_dist <= tolerance else "❌ Deviation"
                     results.append({
-                        "النقطة": row['ID'],
-                        "المرجع": nearest_point['Point_ID'],
-                        "الخطأ (متر)": round(min_dist, 3),
-                        "الحالة": status
+                        "Surveyed Point ID": row['ID'],
+                        "Design Reference ID": nearest_point['Point_ID'],
+                        "Deviation (m)": round(min_dist, 3),
+                        "Status": status
                     })
                 
                 df_results = pd.DataFrame(results)
                 
                 def highlight_errors(val):
-                    color = '#ffcccc' if val == '❌ يوجد انحراف' else '#ccffcc'
+                    color = '#ffcccc' if val == '❌ Deviation' else '#ccffcc'
                     return f'background-color: {color}'
                 
-                st.dataframe(df_results.style.map(highlight_errors, subset=['الحالة']), use_container_width=True)
+                st.dataframe(df_results.style.map(highlight_errors, subset=['Status']), use_container_width=True)
                 
+                # ----------------====================================----------------
+                # 🌟 English-Only Clean HTML Report Generator for PDF Printing 🌟
+                # ----------------====================================----------------
                 st.markdown("---")
-                st.info("💡 لطباعة هذا التقرير وإرساله للاستشاري كـ PDF: اضغط على `Ctrl + P` في لوحة المفاتيح (أو Print من المتصفح) واختر 'Save as PDF'.")
+                html_table = df_results.to_html(index=False, classes='report-table')
+                html_report = f"""
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <style>
+                        body {{ font-family: 'Arial', sans-serif; direction: ltr; text-align: left; padding: 30px; }}
+                        .header-title {{ color: #1E3A8A; text-align: center; border-bottom: 3px solid #1E3A8A; padding-bottom: 15px; margin-bottom: 20px; }}
+                        .info-section {{ background-color: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 20px; }}
+                        .report-table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
+                        .report-table th, .report-table td {{ border: 1px solid #cbd5e1; padding: 12px; text-align: center; font-size: 14px; }}
+                        .report-table th {{ background-color: #f1f5f9; color: #1e293b; font-weight: bold; }}
+                        .match {{ background-color: #dcfce7; color: #15803d; font-weight: bold; }}
+                        .deviation {{ background-color: #fee2e2; color: #b91c1c; font-weight: bold; }}
+                        .footer {{ margin-top: 40px; text-align: center; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 10px; }}
+                    </style>
+                </head>
+                <body>
+                    <div class="header-title">
+                        <h2>📊 As-Built Survey Verification Report</h2>
+                    </div>
+                    <div class="info-section">
+                        <p><strong>📂 Survey File Name:</strong> {asbuilt_file.name}</p>
+                        <p><strong>⏱️ Report Date/Time:</strong> {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}</p>
+                        <p><strong>🎯 Approved Tolerance Limit:</strong> {tolerance} m ({int(tolerance*1000)} mm)</p>
+                    </div>
+                    {html_table.replace('<td>✅ Match</td>', '<td class="match">✅ Match</td>').replace('<td>❌ Deviation</td>', '<td class="deviation">❌ Deviation</td>')}
+                    <div class="footer">
+                        <p>Generated automatically by Smart Surveyor Pro System</p>
+                    </div>
+                </body>
+                </html>
+                """
+                
+                st.download_button(
+                    label="📥 Download Official Report for PDF Printing",
+                    data=html_report,
+                    file_name=f"AsBuilt_Report_{asbuilt_file.name.split('.')[0]}.html",
+                    mime="text/html",
+                    use_container_width=True
+                )
                 
     except Exception as e:
-        st.error(f"حدث خطأ أثناء معالجة الملفات: {e}")
+        st.error(f"An error occurred while processing files: {e}")
