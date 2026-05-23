@@ -1,8 +1,4 @@
 streamlit
+ezdxf
 pandas
-numpy
-folium
-streamlit-folium
-shapely
-fpdf
-ezdxf>=1.0.0
+matplotlib
