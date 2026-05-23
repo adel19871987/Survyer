@@ -111,7 +111,9 @@ if uploaded_dxf:
                     
                     for i, cat in enumerate(categories):
                         cat_data = df_all_points[df_all_points['Category'] == cat]
-                        ax.scatter(cat_data['East_X'], cat_data['North_Y'], label=cat, color=colors(i), s=10)
+                        # استخراج المسمى الإنجليزي لتفادي مشكلة الخط العربي المقلوب بالسحابة
+                        eng_label = cat.split('(')[-1].replace(')', '') if '(' in cat else cat
+                        ax.scatter(cat_data['East_X'], cat_data['North_Y'], label=eng_label, color=colors(i), s=10)
                     
                     ax.set_aspect('equal')
                     ax.set_xlabel('East (X)')
