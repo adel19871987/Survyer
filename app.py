@@ -7,8 +7,16 @@ import re
 import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="Smart Surveyor Pro", layout="wide")
-st.title("🏗️ Professional Survey & Quantity Management System (Smart Naming Edition)")
+st.title("🏗️ Professional Survey & Quantity Management System")
 st.markdown("---")
+
+# ==========================================
+# 🔄 Initialize Session States for Reset (Go Back)
+# ==========================================
+if 'dxf_key' not in st.session_state:
+    st.session_state['dxf_key'] = 0
+if 'asbuilt_key' not in st.session_state:
+    st.session_state['asbuilt_key'] = 0
 
 # ==========================================
 # Core Functions
@@ -30,7 +38,6 @@ def classify_layer(layer_name):
     return "Others"
 
 def clean_mtext(text_val):
-    # تنظيف نصوص الأوتوكاد المتقدمة من أكواد التنسيق الداخلية لتظهر نظيفة (مثل F1 أو ق1)
     text_val = re.sub(r'\\[a-zA-Z0-9]+;', '', text_val)
     text_val = text_val.replace(r'\P', ' ').strip()
     return text_val
@@ -46,9 +53,17 @@ def calc_distance(x1, y1, x2, y2):
     return math.hypot(x2 - x1, y2 - y1)
 
 # ==========================================
-# Sidebar Settings
+# Sidebar Settings & Reset Button
 # ==========================================
 st.sidebar.header("⚙️ System Settings")
+
+# 🌟 زر العودة إلى الوراء وإعادة تعيين النظام 🌟
+if st.sidebar.button("🔄 Reset System (Go Back)", use_container_width=True, type="primary"):
+    st.session_state['dxf_key'] += 1
+    st.session_state['asbuilt_key'] += 1
+    st.rerun()
+
+st.sidebar.markdown("---")
 device_type = st.sidebar.selectbox("Export Device Type:", ["Leica (CSV)", "Topcon (TXT)", "Generic (CSV)"])
 tolerance = st.sidebar.number_input("Allowed Tolerance (meters):", value=0.02, step=0.01)
 
@@ -56,26 +71,25 @@ tolerance = st.sidebar.number_input("Allowed Tolerance (meters):", value=0.02, s
 # Main DXF Processing
 # ==========================================
 st.subheader("📁 Upload Base Layout (DXF)")
-uploaded_dxf = st.file_uploader("Upload approved DXF layout here:", type=["dxf"])
+uploaded_dxf = st.file_uploader("Upload approved DXF layout here:", type=["dxf"], key=f"dxf_upload_{st.session_state['dxf_key']}")
 
 if uploaded_dxf:
     try:
         doc, path = read_dxf(uploaded_dxf)
         msp = doc.modelspace()
         
-        # 1. تجميع كافة النصوص المكتوبة في المخطط مع إحداثياتها لبناء قاعدة بيانات نصية مكانية
         text_pool = []
         for text_ent in msp.query('TEXT MTEXT'):
             try:
                 if text_ent.dxftype() == 'TEXT':
                     raw_txt = text_ent.dxf.insert
                     txt_str = text_ent.dxf.text
-                else: # MTEXT
+                else:
                     raw_txt = text_ent.dxf.insert
                     txt_str = text_ent.text
                 
                 cleaned_txt = clean_mtext(txt_str)
-                if cleaned_txt and len(cleaned_txt) < 15: # استبعاد الجمل الطويلة والملاحظات جانباً
+                if cleaned_txt and len(cleaned_txt) < 15:
                     text_pool.append({"text": cleaned_txt, "x": raw_txt.x, "y": raw_txt.y})
             except:
                 continue
@@ -84,7 +98,6 @@ if uploaded_dxf:
         data_list = []
         category_counters = {"Footings": 0, "Columns": 0, "Beams": 0, "Boundary": 0, "Others": 0}
         
-        # 2. معالجة العناصر الهندسية والمطابقة الذكية
         for entity in msp.query('LWPOLYLINE'):
             layer = entity.dxf.layer
             category = classify_layer(layer)
@@ -100,16 +113,13 @@ if uploaded_dxf:
             category_counters[category] += 1
             item_num = category_counters[category]
             
-            # حساب مركز العنصر الحالي (Centroid) للبحث عن النصوص القريبة بداخلها
             cx = sum(v[0] for v in vertices) / len(vertices)
             cy = sum(v[1] for v in vertices) / len(vertices)
             
-            # حساب القطر التقريبي للعنصر لتحديد نطاق البحث عن النص
             xs = [v[0] for v in vertices]
             ys = [v[1] for v in vertices]
             max_dim = math.hypot(max(xs) - min(xs), max(ys) - min(ys))
             
-            # البحث عن أقرب نص لمركز العنصر
             matched_text = None
             min_text_dist = float('inf')
             for t in text_pool:
@@ -118,7 +128,6 @@ if uploaded_dxf:
                     min_text_dist = d
                     matched_text = t
             
-            # تحديد التسمية بناءً على الأولويات (نص داخلي -> اسم لاير مخصص -> ترقيم تلقائي للنوع)
             generic_layers = ['0', 'DEFPOINTS', 'ZAPATA', 'ZAPATAS', 'FOOTING', 'FOOTINGS', 'COLUMN', 'COLUMNS', 'BEAM', 'BEAMS', 'CONCRETE']
             layer_upper = layer.upper().strip()
             
@@ -132,7 +141,6 @@ if uploaded_dxf:
                 elif category == "Beams": final_prefix = f"Beam_{item_num}"
                 else: final_prefix = f"Object_{item_num}"
             
-            # تسجيل أركان العنصر بالتسمية الذكية النهائية المعتمدة
             for i, v in enumerate(vertices):
                 all_points.append({
                     "Point_ID": f"{final_prefix}_P{i+1}", 
@@ -145,7 +153,7 @@ if uploaded_dxf:
         os.remove(path)
         
         # ---------------------------------------------------------
-        # Unified Tab System (English Only)
+        # Unified Tab System
         # ---------------------------------------------------------
         tab1, tab2, tab3, tab4 = st.tabs([
             "🗺️ 1. Map & Quantities", 
@@ -209,7 +217,7 @@ if uploaded_dxf:
                 sep = ',' if device_type != "Topcon (TXT)" else ' '
                 csv_data = export_points.to_csv(index=False, sep=sep, header=False)
                 
-                st.success(f"Successfully prepared {len(export_points)} points (with offset if applied).")
+                st.success(f"Successfully prepared {len(export_points)} points.")
                 st.download_button(f"📥 Download {device_type.split()[0]} File", csv_data, "Staking_Points.txt", "text/plain")
 
         # --- Tab 3: Earthworks ---
@@ -234,12 +242,12 @@ if uploaded_dxf:
                     st.success(f"⚠️ Site requires EMBANKMENT (FILL) height: {round(abs(depth), 2)} meters.")
                     st.success(f"📈 Total Estimated FILL Volume: **{round(abs(volume), 2)}** m³.")
                 else:
-                    st.info("Ground is exactly at the target design level (Zero Volumetrics).")
+                    st.info("Ground is exactly at the target design level.")
 
         # --- Tab 4: As-Built Verification ---
         with tab4:
             st.subheader("🔍 Site Inspection & As-Built Verification Report")
-            asbuilt_file = st.file_uploader("Upload field survey file (CSV/TXT):", type=["csv", "txt"])
+            asbuilt_file = st.file_uploader("Upload field survey file (CSV/TXT):", type=["csv", "txt"], key=f"asbuilt_upload_{st.session_state['asbuilt_key']}")
             
             if asbuilt_file:
                 sep_asb = ',' if asbuilt_file.name.endswith('.csv') else ' '
@@ -266,8 +274,6 @@ if uploaded_dxf:
                     })
                 
                 df_results = pd.DataFrame(results)
-                
-                # إضافة عمود الترقيم التسلسلي في الواجهة والتقرير
                 df_results.insert(0, 'No.', range(1, 1 + len(df_results)))
                 
                 def highlight_errors(val):
@@ -276,9 +282,7 @@ if uploaded_dxf:
                 
                 st.dataframe(df_results.style.map(highlight_errors, subset=['Status']), use_container_width=True)
                 
-                # ----------------====================================----------------
-                # HTML Report Generator for PDF Printing
-                # ----------------====================================----------------
+                # HTML Report Generator
                 st.markdown("---")
                 html_table = df_results.to_html(index=False, classes='report-table')
                 html_report = f"""
