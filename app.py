@@ -3,10 +3,11 @@ import ezdxf
 import pandas as pd
 import os
 import math
+import re
 import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="Smart Surveyor Pro", layout="wide")
-st.title("🏗️ Professional Survey & Quantity Management System")
+st.title("🏗️ Professional Survey & Quantity Management System (Smart Naming Edition)")
 st.markdown("---")
 
 # ==========================================
@@ -22,11 +23,17 @@ def calculate_area(vertices):
 
 def classify_layer(layer_name):
     layer_name = layer_name.upper()
-    if any(x in layer_name for x in ['ZAPATA', 'FOOT', 'قاعدة', 'FND']): return "Footings"
-    if any(x in layer_name for x in ['COLUMN', 'COL', 'عمود']): return "Columns"
-    if any(x in layer_name for x in ['BEAM', 'جسر', 'TIE']): return "Beams"
+    if any(x in layer_name for x in ['ZAPATA', 'FOOT', 'قاعدة', 'FND', 'F1', 'F2', 'F3', 'F4', 'F5']): return "Footings"
+    if any(x in layer_name for x in ['COLUMN', 'COL', 'عمود', 'C1', 'C2', 'C3']): return "Columns"
+    if any(x in layer_name for x in ['BEAM', 'جسر', 'TIE', 'B1', 'B2']): return "Beams"
     if any(x in layer_name for x in ['BOUNDARY', 'SITE', 'حد']): return "Boundary"
     return "Others"
+
+def clean_mtext(text_val):
+    # تنظيف نصوص الأوتوكاد المتقدمة من أكواد التنسيق الداخلية لتظهر نظيفة (مثل F1 أو ق1)
+    text_val = re.sub(r'\\[a-zA-Z0-9]+;', '', text_val)
+    text_val = text_val.replace(r'\P', ' ').strip()
+    return text_val
 
 def read_dxf(uploaded_file):
     temp_file_path = f"temp_{uploaded_file.name}"
@@ -56,21 +63,79 @@ if uploaded_dxf:
         doc, path = read_dxf(uploaded_dxf)
         msp = doc.modelspace()
         
+        # 1. تجميع كافة النصوص المكتوبة في المخطط مع إحداثياتها لبناء قاعدة بيانات نصية مكانية
+        text_pool = []
+        for text_ent in msp.query('TEXT MTEXT'):
+            try:
+                if text_ent.dxftype() == 'TEXT':
+                    raw_txt = text_ent.dxf.insert
+                    txt_str = text_ent.dxf.text
+                else: # MTEXT
+                    raw_txt = text_ent.dxf.insert
+                    txt_str = text_ent.text
+                
+                cleaned_txt = clean_mtext(txt_str)
+                if cleaned_txt and len(cleaned_txt) < 15: # استبعاد الجمل الطويلة والملاحظات جانباً
+                    text_pool.append({"text": cleaned_txt, "x": raw_txt.x, "y": raw_txt.y})
+            except:
+                continue
+        
         all_points = []
         data_list = []
+        category_counters = {"Footings": 0, "Columns": 0, "Beams": 0, "Boundary": 0, "Others": 0}
         
+        # 2. معالجة العناصر الهندسية والمطابقة الذكية
         for entity in msp.query('LWPOLYLINE'):
             layer = entity.dxf.layer
             category = classify_layer(layer)
             vertices = [(v[0], v[1]) for v in entity.get_points()]
             area = calculate_area(vertices)
             
+            if len(vertices) == 0:
+                continue
+                
             if area > 0:
                 data_list.append({"Category": category, "Layer Name": layer, "Area (m2)": area})
             
+            category_counters[category] += 1
+            item_num = category_counters[category]
+            
+            # حساب مركز العنصر الحالي (Centroid) للبحث عن النصوص القريبة بداخلها
+            cx = sum(v[0] for v in vertices) / len(vertices)
+            cy = sum(v[1] for v in vertices) / len(vertices)
+            
+            # حساب القطر التقريبي للعنصر لتحديد نطاق البحث عن النص
+            xs = [v[0] for v in vertices]
+            ys = [v[1] for v in vertices]
+            max_dim = math.hypot(max(xs) - min(xs), max(ys) - min(ys))
+            
+            # البحث عن أقرب نص لمركز العنصر
+            matched_text = None
+            min_text_dist = float('inf')
+            for t in text_pool:
+                d = math.hypot(t['x'] - cx, t['y'] - cy)
+                if d < min_text_dist:
+                    min_text_dist = d
+                    matched_text = t
+            
+            # تحديد التسمية بناءً على الأولويات (نص داخلي -> اسم لاير مخصص -> ترقيم تلقائي للنوع)
+            generic_layers = ['0', 'DEFPOINTS', 'ZAPATA', 'ZAPATAS', 'FOOTING', 'FOOTINGS', 'COLUMN', 'COLUMNS', 'BEAM', 'BEAMS', 'CONCRETE']
+            layer_upper = layer.upper().strip()
+            
+            if matched_text and min_text_dist <= (max_dim * 0.9):
+                final_prefix = matched_text['text']
+            elif layer_upper not in generic_layers and len(layer_upper) <= 10:
+                final_prefix = layer
+            else:
+                if category == "Footings": final_prefix = f"Footing_{item_num}"
+                elif category == "Columns": final_prefix = f"Column_{item_num}"
+                elif category == "Beams": final_prefix = f"Beam_{item_num}"
+                else: final_prefix = f"Object_{item_num}"
+            
+            # تسجيل أركان العنصر بالتسمية الذكية النهائية المعتمدة
             for i, v in enumerate(vertices):
                 all_points.append({
-                    "Point_ID": f"{layer}_{i}", 
+                    "Point_ID": f"{final_prefix}_P{i+1}", 
                     "North_Y": v[1], 
                     "East_X": v[0], 
                     "Category": category
@@ -202,6 +267,9 @@ if uploaded_dxf:
                 
                 df_results = pd.DataFrame(results)
                 
+                # إضافة عمود الترقيم التسلسلي في الواجهة والتقرير
+                df_results.insert(0, 'No.', range(1, 1 + len(df_results)))
+                
                 def highlight_errors(val):
                     color = '#ffcccc' if val == '❌ Deviation' else '#ccffcc'
                     return f'background-color: {color}'
@@ -209,7 +277,7 @@ if uploaded_dxf:
                 st.dataframe(df_results.style.map(highlight_errors, subset=['Status']), use_container_width=True)
                 
                 # ----------------====================================----------------
-                # 🌟 English-Only Clean HTML Report Generator for PDF Printing 🌟
+                # HTML Report Generator for PDF Printing
                 # ----------------====================================----------------
                 st.markdown("---")
                 html_table = df_results.to_html(index=False, classes='report-table')
