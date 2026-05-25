@@ -4,6 +4,7 @@ import pandas as pd
 import os
 import math
 import re
+import base64
 import matplotlib.pyplot as plt
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
@@ -19,7 +20,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# واجهة التطبيق الرئيسية
 st.markdown("""
     <div style="background-color: #1E3A8A; padding: 25px; border-radius: 15px; margin-bottom: 20px;">
         <h1 style="color: white; text-align: center; font-family: 'Arial';">🏗️ LexiMind Pro</h1>
@@ -36,8 +36,36 @@ if 'asbuilt_key' not in st.session_state:
     st.session_state['asbuilt_key'] = 0
 
 # ==========================================
-# 🛠️ Core Functions
+# 🛠️ Core & iOS Safe Download Functions
 # ==========================================
+def download_button_ios(data, filename, label, is_text=False):
+    """دالة مخصصة لحل مشكلة تعليق الشاشة في الآيفون بفتح نافذة تحميل خارجية مستقلة"""
+    if is_text:
+        b64 = base64.b64encode(data.encode('utf-8-sig')).decode()
+        mime = "text/csv;charset=utf-8"
+    else:
+        b64 = base64.b64encode(data).decode()
+        mime = "application/pdf"
+    
+    href = f'data:{mime};base64,{b64}'
+    html = f'''
+    <a href="{href}" download="{filename}" target="_blank" style="
+        display: block;
+        width: 100%;
+        text-align: center;
+        background-color: #1E3A8A;
+        color: white;
+        padding: 12px;
+        margin: 10px 0;
+        border-radius: 8px;
+        text-decoration: none;
+        font-weight: bold;
+        font-size: 16px;
+        box-shadow: 0px 4px 6px rgba(0,0,0,0.1);
+    ">{label}</a>
+    '''
+    st.markdown(html, unsafe_allow_html=True)
+
 def calculate_area(vertices):
     area = 0.0
     for i in range(len(vertices)):
@@ -66,7 +94,6 @@ def rotate_point(x, y, cx, cy, angle_deg):
     ny = cy + (x - cx) * math.sin(angle_rad) + (y - cy) * math.cos(angle_rad)
     return nx, ny
 
-# خوارزمية ترتيب المسار الأقصر (Nearest Neighbor) لمنع الدوران العشوائي
 def optimize_survey_path(df):
     if len(df) < 2: return df
     unvisited = df.to_dict('records')
@@ -224,75 +251,76 @@ if uploaded_dxf:
                         
                     st.dataframe(df_stk[["Export_ID", "North_Y", "East_X", "Category"]], use_container_width=True)
 
-                    if st.button("📥 Generate Professional Survey Report (PDF)", use_container_width=True):
-                        try:
-                            pdf_path = "Survey_Stakeout_Report.pdf"
-                            c = canvas.Canvas(pdf_path, pagesize=A4)
-                            width, height = A4
-                            
-                            color_navy = colors.Color(30/255, 58/255, 138/255)
-                            color_grey = colors.Color(229/255, 231/255, 235/255)
-                            
-                            c.setFillColor(color_navy)
-                            c.rect(0, height-80, width, 80, fill=1)
-                            c.setFillColor(colors.white)
-                            c.setFont("Helvetica-Bold", 22)
-                            c.drawString(50, height-50, "LEXIMIND PRO | FIELD REPORT")
-                            
-                            c.setFillColor(colors.black)
-                            c.setFont("Helvetica-Bold", 12)
-                            c.drawString(50, height-110, "1. PROJECT SUMMARY")
-                            c.setFont("Helvetica", 10)
-                            c.drawString(60, height-130, f"Date: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}")
-                            c.drawString(60, height-145, f"Total Points Ordered: {len(df_stk)}")
-                            c.drawString(60, height-160, f"Path Optimization: {'Enabled' if use_tsp else 'Disabled'}")
-                            c.drawString(60, height-175, f"Applied Offset: X={off_x}m, Y={off_y}m")
+                    # إعداد ملف الـ PDF وحفظه في الذاكرة المؤقتة لتمكين التحميل الخارجي
+                    pdf_path = "Survey_Stakeout_Report.pdf"
+                    c = canvas.Canvas(pdf_path, pagesize=A4)
+                    width, height = A4
+                    
+                    color_navy = colors.Color(30/255, 58/255, 138/255)
+                    color_grey = colors.Color(229/255, 231/255, 235/255)
+                    
+                    c.setFillColor(color_navy)
+                    c.rect(0, height-80, width, 80, fill=1)
+                    c.setFillColor(colors.white)
+                    c.setFont("Helvetica-Bold", 22)
+                    c.drawString(50, height-50, "LEXIMIND PRO | FIELD REPORT")
+                    
+                    c.setFillColor(colors.black)
+                    c.setFont("Helvetica-Bold", 12)
+                    c.drawString(50, height-110, "1. PROJECT SUMMARY")
+                    c.setFont("Helvetica", 10)
+                    c.drawString(60, height-130, f"Date: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}")
+                    c.drawString(60, height-145, f"Total Points Ordered: {len(df_stk)}")
+                    c.drawString(60, height-160, f"Path Optimization: {'Enabled' if use_tsp else 'Disabled'}")
+                    c.drawString(60, height-175, f"Applied Offset: X={off_x}m, Y={off_y}m")
 
-                            y_table = height - 220
-                            c.setFont("Helvetica-Bold", 12)
-                            c.drawString(50, y_table, "2. DETAILED STAKING LIST")
-                            
-                            y_table -= 25
-                            c.setFillColor(color_grey)
-                            c.rect(50, y_table-5, 500, 20, fill=1)
-                            c.setFillColor(colors.black)
+                    y_table = height - 220
+                    c.setFont("Helvetica-Bold", 12)
+                    c.drawString(50, y_table, "2. DETAILED STAKING LIST")
+                    
+                    y_table -= 25
+                    c.setFillColor(color_grey)
+                    c.rect(50, y_table-5, 500, 20, fill=1)
+                    c.setFillColor(colors.black)
+                    c.setFont("Helvetica-Bold", 10)
+                    c.drawString(60, y_table, "Point ID")
+                    c.drawString(200, y_table, "Easting (X)")
+                    c.drawString(350, y_table, "Northing (Y)")
+                    c.drawString(480, y_table, "Category")
+
+                    y_table -= 20
+                    c.setFont("Helvetica", 9)
+                    for idx, r in df_stk.iterrows():
+                        if y_table < 60:
+                            c.showPage()
+                            y_table = height - 50
                             c.setFont("Helvetica-Bold", 10)
-                            c.drawString(60, y_table, "Point ID")
-                            c.drawString(200, y_table, "Easting (X)")
-                            c.drawString(350, y_table, "Northing (Y)")
-                            c.drawString(480, y_table, "Category")
-
+                            c.drawString(60, y_table, "Point ID | Easting | Northing | Category")
                             y_table -= 20
                             c.setFont("Helvetica", 9)
-                            for idx, r in df_stk.iterrows():
-                                if y_table < 60:
-                                    c.showPage()
-                                    y_table = height - 50
-                                    c.setFont("Helvetica-Bold", 10)
-                                    c.drawString(60, y_table, "Point ID | Easting | Northing | Category")
-                                    y_table -= 20
-                                    c.setFont("Helvetica", 9)
-                                
-                                c.drawString(60, y_table, str(r['Export_ID']))
-                                c.drawString(200, y_table, f"{r['East_X']:.3f}")
-                                c.drawString(350, y_table, f"{r['North_Y']:.3f}")
-                                c.drawString(480, y_table, str(r['Category']))
-                                c.setStrokeColor(colors.lightgrey)
-                                c.line(50, y_table-3, 550, y_table-3)
-                                y_table -= 18
-                            
-                            c.setFont("Helvetica-Bold", 10)
-                            c.drawString(50, 40, "Surveyor Signature: _______________________")
-                            c.drawString(350, 40, "Site Engineer: _______________________")
-                            
-                            c.save()
-                            with open(pdf_path, "rb") as f:
-                                st.download_button("📥 Download Official PDF", f, pdf_path, "application/octet-stream")
-                        except Exception as e: st.error(f"PDF Error: {e}")
+                        
+                        c.drawString(60, y_table, str(r['Export_ID']))
+                        c.drawString(200, y_table, f"{r['East_X']:.3f}")
+                        c.drawString(350, y_table, f"{r['North_Y']:.3f}")
+                        c.drawString(480, y_table, str(r['Category']))
+                        c.setStrokeColor(colors.lightgrey)
+                        c.line(50, y_table-3, 550, y_table-3)
+                        y_table -= 18
                     
+                    c.setFont("Helvetica-Bold", 10)
+                    c.drawString(50, 40, "Surveyor Signature: _______________________")
+                    c.drawString(350, 40, "Site Engineer: _______________________")
+                    c.save()
+                    
+                    # 🚀 تفعيل زر تحميل الـ PDF المطور للآيفون والمنبثق بصفحة مستقلة
+                    with open(pdf_path, "rb") as f:
+                        pdf_bytes = f.read()
+                    download_button_ios(pdf_bytes, pdf_path, "📥 Download Official PDF Report (External Window)")
+                    
+                    # 🚀 تفعيل زر تحميل ملف الإحداثيات المطور للآيفون والمنبثق بصفحة مستقلة
                     delim = ',' if device_type != "Topcon (TXT)" else ' '
                     txt_data = df_stk[["Export_ID", "North_Y", "East_X"]].to_csv(index=False, sep=delim, header=False)
-                    st.download_button(f"📥 Download Field File ({device_type})", txt_data, "Staking_Data.txt", "application/octet-stream")
+                    download_button_ios(txt_data, "Staking_Data.txt", f"📥 Download Field File ({device_type})", is_text=True)
 
         with tab3:
             st.subheader("🔄 Transformation Matrix")
@@ -328,6 +356,7 @@ if uploaded_dxf:
                     df_inter = pd.DataFrame(intersections, columns=["X", "Y"]).drop_duplicates()
                     st.dataframe(df_inter, use_container_width=True)
                 else: st.warning("No grid intersections found.")
+            else: st.info("No grid lines detected in DXF.")
 
         with tab5:
             st.subheader("🧱 Brickwork & Masonry Estimator")
@@ -347,6 +376,7 @@ if uploaded_dxf:
                 target = st.number_input("Target Level:", value=0.0)
                 vol = tot_a * abs(ngl - target)
                 st.error(f"Volume: {round(vol, 2)} m³")
+            else: st.info("No structural elements found to calculate footprint area.")
 
         with tab7:
             st.subheader("🔍 As-Built Audit Engine")
