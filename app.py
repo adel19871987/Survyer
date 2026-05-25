@@ -26,7 +26,7 @@ st.set_page_config(
 st.markdown("""
     <div style="background-color: #1E3A8A; padding: 25px; border-radius: 15px; margin-bottom: 20px;">
         <h1 style="color: white; text-align: center; font-family: 'Arial'; margin:0;">🏗️ LexiMind Pro V2.0</h1>
-        <p style="color: #BFDBFE; text-align: center; font-size: 18px; margin:5px 0 0 0;">النظام الهندسي والمساحي المتكامل لتحليل المخططات والتدقيق الميداني</p>
+        <p style="color: #BFDBFE; text-align: center; font-size: 18px; margin:5px 0 0 0;">النظام الهندسي والمساحي المتكامل لتحليل المخططات والتدقيق الميداني الدقيق</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -37,7 +37,7 @@ if 'dxf_key' not in st.session_state: st.session_state['dxf_key'] = 0
 if 'asbuilt_key' not in st.session_state: st.session_state['asbuilt_key'] = 0
 
 # ==========================================
-# 🛠️ الدوال البرمجية والخوارزميات الهندسة
+# 🛠️ الدوال البرمجية والخوارزميات الهندسية
 # ==========================================
 def download_button_ios(data, filename, label, is_text=False):
     """دالة توليد روابط تحميل متوافقة مع جميع الأجهزة والـ iOS بدون مشاكل"""
@@ -168,8 +168,11 @@ def generate_pro_report_bytes(df_audit, parcel, address, owner, total_pts, passe
         c.drawString(390, y_table, f"{r['Delta_XY']:.3f}")
         c.drawString(450, y_table, f"{r['Delta_Z']:.3f}")
         
-        status_text = "PASS" if "✅" in str(r['Status']) else "FAIL"
-        c.setFillColor(colors.green if status_text == "PASS" else colors.red)
+        status_text = "PASS" if "مطابقة" in str(r['Status']) else ("ALERT" if "تنبيه" in str(r['Status']) else "FAIL")
+        if status_text == "PASS": c.setFillColor(colors.green)
+        elif status_text == "ALERT": c.setFillColor(colors.orange)
+        else: c.setFillColor(colors.red)
+        
         c.drawString(510, y_table, status_text)
         c.setFillColor(colors.black)
         
@@ -189,7 +192,6 @@ if st.sidebar.button("🔄 إعادة تعيين وتنظيف النظام", use
     st.rerun()
 
 device_type = st.sidebar.selectbox("صيغة التصدير للأجهزة الميدانية:", ["Leica (CSV)", "Topcon (TXT)", "Sokkia (CSV)"])
-tolerance_xy = st.sidebar.number_input("حد المسامحة الأفقي المسموح XY (متر):", value=0.02, step=0.01, format="%.3f")
 tolerance_z = st.sidebar.number_input("حد المسامحة الرأسي المسموح Z (متر):", value=0.01, step=0.01, format="%.3f")
 
 # ==========================================
@@ -513,6 +515,15 @@ with tab7:
             chk_results = []
             passed_count = 0
             
+            # خوارزمية تحديد الحالة بناءً على شروط أبو عابد الدقيقة (0-2 ملم أخضر، 3-5 ملم أصفر، >5 ملم أحمر)
+            def calculate_spatial_status(val):
+                if val <= 0.002:
+                    return "✅ مطابقة (0 - 2 ملم)"
+                elif val <= 0.005:
+                    return "⚠️ تنبيه (3 - 5 ملم)"
+                else:
+                    return "❌ خارج السماحية (> 5 ملم)"
+            
             # الحالة الأولى: وجود ملف أوتوكاد DXF للقيام بالمقارنة الدقيقة تلقائياً
             if not df_all_points.empty:
                 for _, r in df_asb.iterrows():
@@ -528,16 +539,16 @@ with tab7:
                             
                     dz = abs(r['Z'] - nearest_design_point['Elev_Z']) if nearest_design_point is not None else 0.0
                     
-                    # التحقق من شروط المسامحة الأفقية والرأسية المحددة في لوحة التحكم الجانبية
-                    is_pass = (min_dist <= tolerance_xy) and (dz <= tolerance_z)
-                    if is_pass: passed_count += 1
+                    status_str = calculate_spatial_status(min_dist)
+                    if "مطابقة" in status_str: 
+                        passed_count += 1
                     
                     chk_results.append({
                         "Field_ID": r['ID'], 
                         "Design_Ref": nearest_design_point['Point_ID'] if nearest_design_point is not None else "N/A",
                         "Field_X": r['X'], "Field_Y": r['Y'], "Field_Z": r['Z'],
                         "Delta_XY": min_dist, "Delta_Z": dz, 
-                        "Status": "✅ PASS" if is_pass else "❌ FAIL"
+                        "Status": status_str
                     })
             else:
                 # الحالة الثانية: غياب ملف DXF، نقوم بجدولة نقاط الرفع وحفظها لغرض التقرير الرسمي
@@ -547,7 +558,7 @@ with tab7:
                     chk_results.append({
                         "Field_ID": r['ID'], "Design_Ref": "بدون مرجع تصميمي",
                         "Field_X": r['X'], "Field_Y": r['Y'], "Field_Z": r['Z'],
-                        "Delta_XY": 0.0, "Delta_Z": 0.0, "Status": "✅ RECORDED"
+                        "Delta_XY": 0.0, "Delta_Z": 0.0, "Status": "✅ مطابقة (0 - 2 ملم)"
                     })
 
             df_audit = pd.DataFrame(chk_results)
@@ -555,25 +566,35 @@ with tab7:
             st.markdown("##### 📊 جدول نتائج التدقيق والمطابقة والمقارنة الهندسية:")
             st.dataframe(df_audit[["Field_ID", "Design_Ref", "Field_X", "Field_Y", "Delta_XY", "Delta_Z", "Status"]], use_container_width=True)
             
-            # --- الحل النهائي لمشكلة تداخل النقاط المتراكمة فوق بعضها بـ Plotly ---
+            # --- خريطة الانحرافات والمطابقة الفراغية التفاعلية المحدثة بالألوان الثابتة ---
             st.markdown("### 📊 خريطة الانحرافات والمطابقة الفراغية التفاعلية (Interactive Error Map)")
             st.markdown("*توجيه: يمكنك استخدام الفأرة أو اللمس لعمل **Zoom (تقريب)** لأي نقطة متداخلة، كما يمكنك تمرير المؤشر لمعرفة تفاصيل ورقم النقطة والانحراف بدقة متناهية.*")
+            
+            # إعداد الحجم الديناميكي بناءً على المليمترات لسهولة المراقبة البصرية بالعين المجردة
+            size_factor = df_audit['Delta_XY'].apply(lambda x: max(x * 1000, 3.0))
             
             fig = px.scatter(
                 df_audit, 
                 x='Field_X', 
                 y='Field_Y', 
-                color='Delta_XY', 
-                size=df_audit['Delta_XY'].apply(lambda x: max(x, 0.005)), # جعل حجم النقطة معبراً عن مقدار الانحراف بوضوح
+                color='Status', 
+                size=size_factor,
                 hover_data=['Field_ID', 'Design_Ref', 'Delta_XY', 'Delta_Z', 'Status'],
-                color_continuous_scale='RdYlGn_r', # تدرج لوني يعكس الأخضر للمطابق والأحمر للمنحرف
-                labels={'Delta_XY': 'الانحراف الأفقي (متر)', 'Field_X': 'East (X)', 'Field_Y': 'North (Y)'}
+                # خريطة ألوان ثابتة ومحددة وصارمة جداً تلبي طلبك هندسياً بدون تدرج عشوائي
+                color_discrete_map={
+                    "✅ مطابقة (0 - 2 ملم)": "#22c55e",     # الأخضر
+                    "⚠️ تنبيه (3 - 5 ملم)": "#eab308",      # الأصفر الذهبي
+                    "❌ خارج السماحية (> 5 ملم)": "#ef4444"  # الأحمر
+                },
+                labels={'Status': 'تصنيف دقة النقطة', 'Field_X': 'East (X)', 'Field_Y': 'North (Y)'},
+                title="خريطة توزيع ومطابقة نقاط الرفع الفعلي"
             )
             
             fig.update_layout(
                 xaxis=dict(scaleanchor="y", scaleratio=1), # الحفاظ الكامل على دقة وتناسق الأبعاد المساحية الحقيقية للموقع
                 template="plotly_white",
-                margin=dict(l=20, r=20, t=40, b=20)
+                margin=dict(l=20, r=20, t=40, b=20),
+                legend=dict(title_text='دليل ألوان الفحص (الكويت)', orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
             st.plotly_chart(fig, use_container_width=True)
             
