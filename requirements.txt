@@ -3,3 +3,4 @@ ezdxf
 pandas
 matplotlib
 reportlab
+scipy
