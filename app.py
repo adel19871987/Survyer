@@ -36,7 +36,7 @@ if 'asbuilt_key' not in st.session_state:
     st.session_state['asbuilt_key'] = 0
 
 # ==========================================
-# 🛠️ Core Functions (Your Original Logic)
+# 🛠️ Core Functions
 # ==========================================
 def calculate_area(vertices):
     area = 0.0
@@ -229,15 +229,19 @@ if uploaded_dxf:
                         
                     st.dataframe(df_stk[["Export_ID", "North_Y", "East_X", "Category"]], use_container_width=True)
 
-                    # --- 📝 محرك التقارير الهندسي المطور (PDF) ---
+                    # --- 📝 محرك التقارير الهندسي المطور (PDF) - تم حل مشكلة الألوان هنا ---
                     if st.button("📥 Generate Professional Survey Report (PDF)", use_container_width=True):
                         try:
                             pdf_path = "Survey_Stakeout_Report.pdf"
                             c = canvas.Canvas(pdf_path, pagesize=A4)
                             width, height = A4
                             
+                            # تعريف الألوان بطريقة آمنة تتوافق مع كل إصدارات reportlab
+                            color_navy = colors.Color(30/255, 58/255, 138/255) # بديل #1E3A8A
+                            color_grey = colors.Color(229/255, 231/255, 235/255) # بديل #E5E7EB
+                            
                             # الهوية والترويسة
-                            c.setFillColor(colors.hexColor("#1E3A8A"))
+                            c.setFillColor(color_navy)
                             c.rect(0, height-80, width, 80, fill=1)
                             c.setFillColor(colors.white)
                             c.setFont("Helvetica-Bold", 22)
@@ -260,7 +264,7 @@ if uploaded_dxf:
                             
                             y_table -= 25
                             # خلفية عناوين الجدول
-                            c.setFillColor(colors.hexColor("#E5E7EB"))
+                            c.setFillColor(color_grey)
                             c.rect(50, y_table-5, 500, 20, fill=1)
                             c.setFillColor(colors.black)
                             c.setFont("Helvetica-Bold", 10)
