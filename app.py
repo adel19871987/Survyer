@@ -39,7 +39,6 @@ if 'asbuilt_key' not in st.session_state:
 # 🛠️ Core & iOS Safe Download Functions
 # ==========================================
 def download_button_ios(data, filename, label, is_text=False):
-    """دالة مشفرة لفتح روابط التحميل في نافذة خارجية مستقلة لحماية المتصفح من الانهيار"""
     if is_text:
         b64 = base64.b64encode(data.encode('utf-8-sig')).decode()
         mime = "text/csv;charset=utf-8"
@@ -217,7 +216,6 @@ if uploaded_dxf:
                 with col_q2:
                     fig, ax = plt.subplots(figsize=(6, 3.5))
                     if not df_all_points.empty:
-                        # رسم عينة خفيفة للسرعة إذا كانت النقاط ضخمة
                         sample_df = df_all_points.sample(n=min(1000, len(df_all_points)))
                         for cat in sample_df['Category'].unique():
                             c_data = sample_df[sample_df['Category'] == cat]
@@ -228,7 +226,6 @@ if uploaded_dxf:
         with tab2:
             st.subheader("📍 Smart Field Stakeout Engine")
             if not df_all_points.empty:
-                # فلترة ذكية حسب الطبقة لتقليل الـ 4000 نقطة عند الحاجة
                 all_layers = df_all_points["Layer_Name"].unique()
                 selected_layers = st.multiselect("🎯 Filter by AutoCAD Layer (Recommended for large files):", all_layers, default=all_layers)
                 
@@ -241,7 +238,6 @@ if uploaded_dxf:
                     df_stk = df_all_points[df_all_points['Layer_Name'].isin(selected_layers)].copy()
                     st.info(f"📊 Selected Points: {len(df_stk)} rows out of {len(df_all_points)}")
                     
-                    # حماية الجوال من التعليق عند معالجة الملفات المليونية
                     if use_tsp and len(df_stk) > 1000:
                         st.warning("⚠️ High Point Count: Path optimization disabled automatically to prevent crashing your mobile browser.")
                         use_tsp = False
@@ -260,7 +256,6 @@ if uploaded_dxf:
                         
                     st.dataframe(df_stk[["Export_ID", "North_Y", "East_X", "Category", "Layer_Name"]], use_container_width=True)
 
-                    # توليد تقرير PDF فوري وخفيف
                     pdf_path = "Survey_Stakeout_Report.pdf"
                     c = canvas.Canvas(pdf_path, pagesize=A4)
                     width, height = A4
@@ -286,7 +281,6 @@ if uploaded_dxf:
                     y_table -= 20
                     c.setFont("Helvetica", 9)
                     
-                    # نكتفي بكتابة أول 500 نقطة في ملف الـ PDF المطبوع لحماية الذاكرة من الانهيار إذا كان الملف ضخماً
                     render_limit = min(500, len(df_stk))
                     for idx, r in df_stk.head(render_limit).iterrows():
                         if y_table < 50:
@@ -335,7 +329,6 @@ if uploaded_dxf:
             st.subheader("📐 Axis Gridline Intersections")
             if grid_lines:
                 intersections = []
-                # تفادي التكرار اللانهائي في الخطوط الضخمة للحفاظ على السرعة
                 limit_grids = grid_lines[:100] 
                 for i in range(len(limit_grids)):
                     for j in range(i + 1, len(limit_grids)):
@@ -373,21 +366,43 @@ if uploaded_dxf:
             else: st.info("No structural elements found to calculate footprint area.")
 
         with tab7:
+            # ========================================================
+            # 🔍 التحديث الذكي والديناميكي لحل مشكلة الفواصل في الآيفون
+            # ========================================================
             st.subheader("🔍 As-Built Audit Engine")
             asb_f = st.file_uploader("Upload Field Survey (CSV/TXT):", type=["csv", "txt"], key=f"as_built_{st.session_state['asbuilt_key']}")
             if asb_f:
-                s_char = ',' if asb_f.name.endswith('.csv') else ' '
-                df_asb = pd.read_csv(asb_f, sep=s_char, header=None, names=["ID", "Y", "X", "Z"])
-                chk = []
-                # تحسين الأداء لملفات المراجعة الكبيرة عبر أخذ عينة للمقارنة السريعة
-                for _, r in df_asb.head(500).iterrows():
-                    m_d = float('inf')
-                    n_pt = None
-                    for _, dr in df_all_points.iterrows():
-                        dst = math.hypot(r['X'] - dr['East_X'], r['Y'] - dr['North_Y'])
-                        if dst < m_d: m_d = dst; n_pt = dr
-                    chk.append({"ID": r['ID'], "Ref": n_pt['Point_ID'] if n_pt is not None else "N/A", "Delta": round(m_d, 3), "Status": "✅" if m_d <= tolerance else "❌"})
-                st.dataframe(pd.DataFrame(chk), use_container_width=True)
+                try:
+                    # قراءة السطر الأول لفحص نوع الفاصل تلقائياً وديناميكياً
+                    first_line = asb_f.readline().decode('utf-8-sig', errors='ignore')
+                    asb_f.seek(0) # إعادة المؤشر لبداية الملف
+                    
+                    # اختيار الفاصل بناءً على محتوى الملف وليس مجرد اسم الصيغة
+                    s_char = ',' if ',' in first_line else r'\s+'
+                    
+                    df_asb = pd.read_csv(asb_f, sep=s_char, header=None, names=["ID", "Y", "X", "Z"], engine='python')
+                    
+                    # تحويل القيم لأرقام وتنظيف الأسطر الفارغة
+                    df_asb['X'] = pd.to_numeric(df_asb['X'], errors='coerce')
+                    df_asb['Y'] = pd.to_numeric(df_asb['Y'], errors='coerce')
+                    df_asb = df_asb.dropna(subset=['X', 'Y'])
+                    
+                    chk = []
+                    for _, r in df_asb.head(500).iterrows():
+                        m_d = float('inf')
+                        n_pt = None
+                        for _, dr in df_all_points.iterrows():
+                            dst = math.hypot(r['X'] - dr['East_X'], r['Y'] - dr['North_Y'])
+                            if dst < m_d: m_d = dst; n_pt = dr
+                        chk.append({
+                            "Field ID": r['ID'], 
+                            "Design Ref": n_pt['Point_ID'] if n_pt is not None else "N/A", 
+                            "Delta (m)": round(m_d, 3) if m_d != float('inf') else 999, 
+                            "Status": "✅" if m_d <= tolerance else "❌"
+                        })
+                    st.dataframe(pd.DataFrame(chk), use_container_width=True)
+                except Exception as e:
+                    st.error(f"Error parsing field data: {e}")
 
     except Exception as exp:
         st.error(f"Pipeline Error: {exp}")
