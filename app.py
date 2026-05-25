@@ -23,7 +23,7 @@ st.set_page_config(
 st.markdown("""
     <div style="background-color: #1E3A8A; padding: 25px; border-radius: 15px; margin-bottom: 20px;">
         <h1 style="color: white; text-align: center; font-family: 'Arial';">🏗️ LexiMind Pro</h1>
-        <p style="color: #BFDBFE; text-align: center; font-size: 18px;">The Professional Survey & Quantity Engineering Suite</p>
+        <p style="color: #BFDBFE; text-align: center; font-size: 18px;">High-Performance Survey & Quantity Engineering Suite</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -39,7 +39,7 @@ if 'asbuilt_key' not in st.session_state:
 # 🛠️ Core & iOS Safe Download Functions
 # ==========================================
 def download_button_ios(data, filename, label, is_text=False):
-    """دالة مخصصة لحل مشكلة تعليق الشاشة في الآيفون بفتح نافذة تحميل خارجية مستقلة"""
+    """دالة مشفرة لفتح روابط التحميل في نافذة خارجية مستقلة لحماية المتصفح من الانهيار"""
     if is_text:
         b64 = base64.b64encode(data.encode('utf-8-sig')).decode()
         mime = "text/csv;charset=utf-8"
@@ -188,7 +188,7 @@ if uploaded_dxf:
                     all_points.append({
                         "Point_ID": f"{final_prefix}_P{i+1}", "Short_ID": f"{short_prefix}-{i+1}",
                         "North_Y": v[1], "East_X": v[0], "Category": category,
-                        "Elem_CX": cx, "Elem_CY": cy, "Elem_Order": i + 1
+                        "Elem_CX": cx, "Elem_CY": cy, "Elem_Order": i + 1, "Layer_Name": layer
                     })
         
         df_all_points = pd.DataFrame(all_points)
@@ -217,29 +217,38 @@ if uploaded_dxf:
                 with col_q2:
                     fig, ax = plt.subplots(figsize=(6, 3.5))
                     if not df_all_points.empty:
-                        for cat in df_all_points['Category'].unique():
-                            c_data = df_all_points[df_all_points['Category'] == cat]
-                            ax.scatter(c_data['East_X'], c_data['North_Y'], label=cat, s=12)
+                        # رسم عينة خفيفة للسرعة إذا كانت النقاط ضخمة
+                        sample_df = df_all_points.sample(n=min(1000, len(df_all_points)))
+                        for cat in sample_df['Category'].unique():
+                            c_data = sample_df[sample_df['Category'] == cat]
+                            ax.scatter(c_data['East_X'], c_data['North_Y'], label=cat, s=8)
                         ax.set_aspect('equal'); ax.legend(fontsize='small'); ax.grid(True, alpha=0.3)
                     st.pyplot(fig); plt.close(fig)
 
         with tab2:
             st.subheader("📍 Smart Field Stakeout Engine")
             if not df_all_points.empty:
-                cats_avail = df_all_points["Category"].unique()
-                sel_cat = st.multiselect("Select Categories to Stake:", cats_avail, default=cats_avail)
+                # فلترة ذكية حسب الطبقة لتقليل الـ 4000 نقطة عند الحاجة
+                all_layers = df_all_points["Layer_Name"].unique()
+                selected_layers = st.multiselect("🎯 Filter by AutoCAD Layer (Recommended for large files):", all_layers, default=all_layers)
                 
                 col_cfg1, col_cfg2, col_cfg3 = st.columns([1, 1, 1])
                 off_x = col_cfg1.number_input("Shift ΔX (East):", value=0.0, step=0.1)
                 off_y = col_cfg2.number_input("Shift ΔY (North):", value=0.0, step=0.1)
-                use_tsp = col_cfg3.checkbox("🔄 Enable Smart Path Optimization", value=True)
+                use_tsp = col_cfg3.checkbox("🔄 Enable Smart Path Optimization", value=False)
                 
-                if sel_cat:
-                    df_stk = df_all_points[df_all_points['Category'].isin(sel_cat)].copy()
+                if selected_layers:
+                    df_stk = df_all_points[df_all_points['Layer_Name'].isin(selected_layers)].copy()
+                    st.info(f"📊 Selected Points: {len(df_stk)} rows out of {len(df_all_points)}")
                     
-                    if use_tsp:
+                    # حماية الجوال من التعليق عند معالجة الملفات المليونية
+                    if use_tsp and len(df_stk) > 1000:
+                        st.warning("⚠️ High Point Count: Path optimization disabled automatically to prevent crashing your mobile browser.")
+                        use_tsp = False
+                    
+                    if use_tsp and len(df_stk) <= 1000:
                         df_stk = optimize_survey_path(df_stk)
-                        st.success("✅ Path Optimized: Points re-ordered to minimize walking distance.")
+                        st.success("✅ Path Optimized successfully.")
 
                     df_stk["East_X"] += off_x
                     df_stk["North_Y"] += off_y
@@ -249,85 +258,68 @@ if uploaded_dxf:
                     else:
                         df_stk["Export_ID"] = df_stk["Point_ID"]
                         
-                    st.dataframe(df_stk[["Export_ID", "North_Y", "East_X", "Category"]], use_container_width=True)
+                    st.dataframe(df_stk[["Export_ID", "North_Y", "East_X", "Category", "Layer_Name"]], use_container_width=True)
 
-                    # إعداد ملف الـ PDF وحفظه في الذاكرة المؤقتة لتمكين التحميل الخارجي
+                    # توليد تقرير PDF فوري وخفيف
                     pdf_path = "Survey_Stakeout_Report.pdf"
                     c = canvas.Canvas(pdf_path, pagesize=A4)
                     width, height = A4
                     
-                    color_navy = colors.Color(30/255, 58/255, 138/255)
-                    color_grey = colors.Color(229/255, 231/255, 235/255)
-                    
-                    c.setFillColor(color_navy)
+                    c.setFillColor(colors.Color(30/255, 58/255, 138/255))
                     c.rect(0, height-80, width, 80, fill=1)
                     c.setFillColor(colors.white)
-                    c.setFont("Helvetica-Bold", 22)
-                    c.drawString(50, height-50, "LEXIMIND PRO | FIELD REPORT")
+                    c.setFont("Helvetica-Bold", 20)
+                    c.drawString(50, height-50, "LEXIMIND PRO | HIGH-VOLUME REPORT")
                     
                     c.setFillColor(colors.black)
                     c.setFont("Helvetica-Bold", 12)
                     c.drawString(50, height-110, "1. PROJECT SUMMARY")
                     c.setFont("Helvetica", 10)
                     c.drawString(60, height-130, f"Date: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}")
-                    c.drawString(60, height-145, f"Total Points Ordered: {len(df_stk)}")
-                    c.drawString(60, height-160, f"Path Optimization: {'Enabled' if use_tsp else 'Disabled'}")
-                    c.drawString(60, height-175, f"Applied Offset: X={off_x}m, Y={off_y}m")
-
-                    y_table = height - 220
-                    c.setFont("Helvetica-Bold", 12)
-                    c.drawString(50, y_table, "2. DETAILED STAKING LIST")
+                    c.drawString(60, height-145, f"Total Rendered Points: {len(df_stk)}")
                     
-                    y_table -= 25
-                    c.setFillColor(color_grey)
-                    c.rect(50, y_table-5, 500, 20, fill=1)
-                    c.setFillColor(colors.black)
-                    c.setFont("Helvetica-Bold", 10)
-                    c.drawString(60, y_table, "Point ID")
-                    c.drawString(200, y_table, "Easting (X)")
-                    c.drawString(350, y_table, "Northing (Y)")
-                    c.drawString(480, y_table, "Category")
-
+                    y_table = height - 190
+                    c.setFont("Helvetica-Bold", 11)
+                    c.drawString(50, y_table, "Point ID | Easting (X) | Northing (Y) | Layer")
+                    c.line(50, y_table-5, 550, y_table-5)
+                    
                     y_table -= 20
                     c.setFont("Helvetica", 9)
-                    for idx, r in df_stk.iterrows():
-                        if y_table < 60:
+                    
+                    # نكتفي بكتابة أول 500 نقطة في ملف الـ PDF المطبوع لحماية الذاكرة من الانهيار إذا كان الملف ضخماً
+                    render_limit = min(500, len(df_stk))
+                    for idx, r in df_stk.head(render_limit).iterrows():
+                        if y_table < 50:
                             c.showPage()
                             y_table = height - 50
-                            c.setFont("Helvetica-Bold", 10)
-                            c.drawString(60, y_table, "Point ID | Easting | Northing | Category")
-                            y_table -= 20
                             c.setFont("Helvetica", 9)
-                        
                         c.drawString(60, y_table, str(r['Export_ID']))
-                        c.drawString(200, y_table, f"{r['East_X']:.3f}")
-                        c.drawString(350, y_table, f"{r['North_Y']:.3f}")
-                        c.drawString(480, y_table, str(r['Category']))
-                        c.setStrokeColor(colors.lightgrey)
-                        c.line(50, y_table-3, 550, y_table-3)
-                        y_table -= 18
+                        c.drawString(180, y_table, f"{r['East_X']:.3f}")
+                        c.drawString(300, y_table, f"{r['North_Y']:.3f}")
+                        c.drawString(420, y_table, str(r['Layer_Name'])[:15])
+                        y_table -= 15
                     
-                    c.setFont("Helvetica-Bold", 10)
-                    c.drawString(50, 40, "Surveyor Signature: _______________________")
-                    c.drawString(350, 40, "Site Engineer: _______________________")
+                    if len(df_stk) > 500:
+                        c.setFont("Helvetica-Bold", 10)
+                        c.setFillColor(colors.red)
+                        c.drawString(50, y_table, f"... Note: PDF preview limited to first 500 points. Total file contains {len(df_stk)} points.")
+                    
                     c.save()
                     
-                    # 🚀 تفعيل زر تحميل الـ PDF المطور للآيفون والمنبثق بصفحة مستقلة
                     with open(pdf_path, "rb") as f:
                         pdf_bytes = f.read()
-                    download_button_ios(pdf_bytes, pdf_path, "📥 Download Official PDF Report (External Window)")
+                    download_button_ios(pdf_bytes, pdf_path, "📥 Download Official PDF Report (iOS Safe)")
                     
-                    # 🚀 تفعيل زر تحميل ملف الإحداثيات المطور للآيفون والمنبثق بصفحة مستقلة
                     delim = ',' if device_type != "Topcon (TXT)" else ' '
                     txt_data = df_stk[["Export_ID", "North_Y", "East_X"]].to_csv(index=False, sep=delim, header=False)
-                    download_button_ios(txt_data, "Staking_Data.txt", f"📥 Download Field File ({device_type})", is_text=True)
+                    download_button_ios(txt_data, "Staking_Data.txt", f"📥 Download FULL Field File ({device_type})", is_text=True)
 
         with tab3:
             st.subheader("🔄 Transformation Matrix")
             col_t1, col_t2, col_t3 = st.columns(3)
-            shift_e = col_t1.number_input("ΔEast (X):", value=0.0)
-            shift_n = col_t2.number_input("ΔNorth (Y):", value=0.0)
-            rot_ang = col_t3.number_input("Rotation (° CW):", value=0.0)
+            shift_e = col_t1.number_input("ΔEast (X):", value=0.0, key="trans_x")
+            shift_n = col_t2.number_input("ΔNorth (Y):", value=0.0, key="trans_y")
+            rot_ang = col_t3.number_input("Rotation (° CW):", value=0.0, key="trans_rot")
             if not df_all_points.empty:
                 df_trans = df_all_points.copy()
                 if rot_ang != 0:
@@ -337,16 +329,18 @@ if uploaded_dxf:
                     df_trans["North_Y"] = [p[1] for p in rotated]
                 df_trans["East_X"] += shift_e
                 df_trans["North_Y"] += shift_n
-                st.dataframe(df_trans[["Point_ID", "North_Y", "East_X", "Category"]], use_container_width=True)
+                st.dataframe(df_trans[["Point_ID", "North_Y", "East_X", "Category", "Layer_Name"]], use_container_width=True)
 
         with tab4:
             st.subheader("📐 Axis Gridline Intersections")
             if grid_lines:
                 intersections = []
-                for i in range(len(grid_lines)):
-                    for j in range(i + 1, len(grid_lines)):
-                        p1, p2 = grid_lines[i][0], grid_lines[i][1]
-                        p3, p4 = grid_lines[j][0], grid_lines[j][1]
+                # تفادي التكرار اللانهائي في الخطوط الضخمة للحفاظ على السرعة
+                limit_grids = grid_lines[:100] 
+                for i in range(len(limit_grids)):
+                    for j in range(i + 1, len(limit_grids)):
+                        p1, p2 = limit_grids[i][0], limit_grids[i][1]
+                        p3, p4 = limit_grids[j][0], limit_grids[j][1]
                         den = (p4.x - p3.x) * (p2.y - p1.y) - (p4.y - p3.y) * (p2.x - p1.x)
                         if abs(den) < 1e-5: continue
                         ua = ((p4.x - p3.x) * (p1.y - p3.y) - (p4.y - p3.y) * (p1.x - p3.x)) / den
@@ -355,7 +349,7 @@ if uploaded_dxf:
                 if intersections:
                     df_inter = pd.DataFrame(intersections, columns=["X", "Y"]).drop_duplicates()
                     st.dataframe(df_inter, use_container_width=True)
-                else: st.warning("No grid intersections found.")
+                else: st.warning("No grid intersections found in the selected sample.")
             else: st.info("No grid lines detected in DXF.")
 
         with tab5:
@@ -363,7 +357,7 @@ if uploaded_dxf:
             if wall_lines:
                 total_w = pd.DataFrame(wall_lines)["Length"].sum()
                 st.info(f"Total Wall Length: {round(total_w, 2)}m")
-                h = st.number_input("Wall Height (m):", value=3.20)
+                h = st.number_input("Wall Height (m):", value=3.20, key="wall_h")
                 st.success(f"Estimated Blocks: {math.ceil(total_w * h * 12.5)} pcs")
             else: st.info("No walls detected in DXF.")
 
@@ -372,8 +366,8 @@ if uploaded_dxf:
             if structural_elements:
                 tot_a = pd.DataFrame(structural_elements)["Area"].sum()
                 st.info(f"Footprint Area: {round(tot_a, 2)} m²")
-                ngl = st.number_input("NGL Level:", value=1.0)
-                target = st.number_input("Target Level:", value=0.0)
+                ngl = st.number_input("NGL Level:", value=1.0, key="ngl_v")
+                target = st.number_input("Target Level:", value=0.0, key="tgt_v")
                 vol = tot_a * abs(ngl - target)
                 st.error(f"Volume: {round(vol, 2)} m³")
             else: st.info("No structural elements found to calculate footprint area.")
@@ -385,7 +379,8 @@ if uploaded_dxf:
                 s_char = ',' if asb_f.name.endswith('.csv') else ' '
                 df_asb = pd.read_csv(asb_f, sep=s_char, header=None, names=["ID", "Y", "X", "Z"])
                 chk = []
-                for _, r in df_asb.iterrows():
+                # تحسين الأداء لملفات المراجعة الكبيرة عبر أخذ عينة للمقارنة السريعة
+                for _, r in df_asb.head(500).iterrows():
                     m_d = float('inf')
                     n_pt = None
                     for _, dr in df_all_points.iterrows():
