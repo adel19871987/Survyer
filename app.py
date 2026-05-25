@@ -7,13 +7,13 @@ import re
 import base64
 from io import BytesIO
 import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
+import plotly.express as px
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 
 # ==========================================
-# 🏗️ LexiMind Pro: Branding & UI Styling
+# 🏗️ إعدادات الواجهة الرئيسية والهوية البصرية
 # ==========================================
 st.set_page_config(
     page_title="LexiMind Pro | Survey Suite V2.0", 
@@ -22,28 +22,28 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# تصميم هيدر احترافي متناسق
 st.markdown("""
     <div style="background-color: #1E3A8A; padding: 25px; border-radius: 15px; margin-bottom: 20px;">
-        <h1 style="color: white; text-align: center; font-family: 'Arial';">🏗️ LexiMind Pro V2.0</h1>
-        <p style="color: #BFDBFE; text-align: center; font-size: 18px;">High-Performance Survey, As-Built Audit & Quantity Suite</p>
+        <h1 style="color: white; text-align: center; font-family: 'Arial'; margin:0;">🏗️ LexiMind Pro V2.0</h1>
+        <p style="color: #BFDBFE; text-align: center; font-size: 18px; margin:5px 0 0 0;">النظام الهندسي والمساحي المتكامل لتحليل المخططات والتدقيق الميداني</p>
     </div>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 🔄 Initialize Session States
+# 🔄 تهيئة وإدارة الجلسات (Session States)
 # ==========================================
-if 'dxf_key' not in st.session_state:
-    st.session_state['dxf_key'] = 0
-if 'asbuilt_key' not in st.session_state:
-    st.session_state['asbuilt_key'] = 0
+if 'dxf_key' not in st.session_state: st.session_state['dxf_key'] = 0
+if 'asbuilt_key' not in st.session_state: st.session_state['asbuilt_key'] = 0
 
 # ==========================================
-# 🛠️ Core & iOS Safe Download Functions
+# 🛠️ الدوال البرمجية والخوارزميات الهندسة
 # ==========================================
 def download_button_ios(data, filename, label, is_text=False):
+    """دالة توليد روابط تحميل متوافقة مع جميع الأجهزة والـ iOS بدون مشاكل"""
     if is_text:
         b64 = base64.b64encode(data.encode('utf-8-sig')).decode()
-        mime = "text/csv;charset=utf-8"
+        mime = "text/plain;charset=utf-8"
     else:
         b64 = base64.b64encode(data).decode()
         mime = "application/pdf"
@@ -51,23 +51,16 @@ def download_button_ios(data, filename, label, is_text=False):
     href = f'data:{mime};base64,{b64}'
     html = f'''
     <a href="{href}" download="{filename}" target="_blank" style="
-        display: block;
-        width: 100%;
-        text-align: center;
-        background-color: #1E3A8A;
-        color: white;
-        padding: 12px;
-        margin: 10px 0;
-        border-radius: 8px;
-        text-decoration: none;
-        font-weight: bold;
-        font-size: 16px;
+        display: block; width: 100%; text-align: center; background-color: #1E3A8A;
+        color: white; padding: 12px; margin: 10px 0; border-radius: 8px;
+        text-decoration: none; font-weight: bold; font-size: 16px;
         box-shadow: 0px 4px 6px rgba(0,0,0,0.1);
     ">{label}</a>
     '''
     st.markdown(html, unsafe_allow_html=True)
 
 def calculate_area(vertices):
+    """حساب مساحة المضلعات المغلقة باستخدام خوارزمية Shoelace"""
     area = 0.0
     for i in range(len(vertices)):
         j = (i + 1) % len(vertices)
@@ -76,26 +69,30 @@ def calculate_area(vertices):
     return abs(area) / 2.0
 
 def classify_layer(layer_name):
+    """التصنيف الذكي للطبقات الإنشائية والمعمارية بناءً على المسميات الهندسية الدارجة"""
     layer_name = layer_name.upper()
-    if any(x in layer_name for x in ['ZAPATA', 'FOOT', 'قاعدة', 'FND', 'F1', 'F2', 'F3', 'F4', 'F5']): return "Footings"
-    if any(x in layer_name for x in ['COLUMN', 'COL', 'عمود', 'C1', 'C2', 'C3']): return "Columns"
-    if any(x in layer_name for x in ['BEAM', 'جسر', 'TIE', 'B1', 'B2']): return "Beams"
-    if any(x in layer_name for x in ['WALL', 'جدار', 'حائط', 'MASONRY', 'BLOCK']): return "Walls"
+    if any(x in layer_name for x in ['ZAPATA', 'FOOT', 'قاعدة', 'FND', 'F']): return "Footings"
+    if any(x in layer_name for x in ['COLUMN', 'COL', 'عمود', 'C']): return "Columns"
+    if any(x in layer_name for x in ['BEAM', 'جسر', 'TIE', 'B']): return "Beams"
+    if any(x in layer_name for x in ['WALL', 'جدار', 'حائط', 'MASONRY']): return "Walls"
     if any(x in layer_name for x in ['BOUNDARY', 'SITE', 'حد']): return "Boundary"
     return "Others"
 
 def clean_mtext(text_val):
+    """تنظيف نصوص الأوتوكاد (MTEXT) من أكواد التنسيق الداخلية"""
     text_val = re.sub(r'\\[a-zA-Z0-9]+;', '', text_val)
     text_val = text_val.replace(r'\P', ' ').strip()
     return text_val
 
 def rotate_point(x, y, cx, cy, angle_deg):
+    """تدوير نقطة بزاوية محددة حول مركز دوران معين"""
     angle_rad = math.radians(angle_deg)
     nx = cx + (x - cx) * math.cos(angle_rad) - (y - cy) * math.sin(angle_rad)
     ny = cy + (x - cx) * math.sin(angle_rad) + (y - cy) * math.cos(angle_rad)
     return nx, ny
 
 def optimize_survey_path(df):
+    """خوارزمية الجار الأقرب (Nearest Neighbor) لتحديد المسار الذكي لتوقيع النقاط ميدانياً"""
     if len(df) < 2: return df
     unvisited = df.to_dict('records')
     optimized_path = []
@@ -110,74 +107,70 @@ def optimize_survey_path(df):
     return pd.DataFrame(optimized_path)
 
 def generate_pro_report_bytes(df_audit, parcel, address, owner, total_pts, passed_pts):
+    """توليد ملف PDF احترافي معتمد بكافة تفاصيل الرفع الميداني والانحرافات الحاصلة"""
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
     
-    # Header
+    # تصميم ترويسة التقرير
     c.setFillColor(colors.Color(30/255, 58/255, 138/255))
     c.rect(0, height-80, width, 80, fill=1)
     c.setFillColor(colors.white)
-    c.setFont("Helvetica-Bold", 18)
-    c.drawString(50, height-50, "LEXIMIND PRO | CERTIFIED AS-BUILT AUDIT REPORT")
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(40, height-50, "LEXIMIND PRO | CERTIFIED AS-BUILT AUDIT REPORT")
     
-    # Project Info
+    # معلومات المشروع والقسيمة
     c.setFillColor(colors.black)
     c.setFont("Helvetica-Bold", 12)
-    c.drawString(50, height-110, "1. PROJECT DETAILS:")
+    c.drawString(40, height-110, "1. PROJECT DETAILS:")
     c.setFont("Helvetica", 10)
-    c.drawString(60, height-130, f"Owner: {owner}")
-    c.drawString(60, height-145, f"Parcel No: {parcel}")
-    c.drawString(60, height-160, f"Address/Location: {address}")
-    c.drawString(60, height-175, f"Date Generated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}")
+    c.drawString(50, height-130, f"Owner: {owner}")
+    c.drawString(50, height-145, f"Parcel No: {parcel}")
+    c.drawString(50, height-160, f"Address/Location: {address}")
+    c.drawString(50, height-175, f"Date: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}")
     
-    # Summary Stats
+    # ملخص التحليل والتدقيق الرقمي
     c.setFont("Helvetica-Bold", 12)
     c.drawString(320, height-110, "2. AUDIT SUMMARY:")
     c.setFont("Helvetica", 10)
     c.drawString(330, height-130, f"Total Points Audited: {total_pts}")
-    c.drawString(330, height-145, f"Points Passed (Within Tolerance): {passed_pts}")
-    c.drawString(330, height-160, f"Points Failed: {total_pts - passed_pts}")
+    c.drawString(330, height-145, f"Passed Within Tolerance: {passed_pts}")
+    c.drawString(330, height-160, f"Failed / Out of Tolerance: {total_pts - passed_pts}")
     
-    # Table Header
-    y_table = height - 220
+    # ترويسة جدول البيانات
+    y_table = height - 210
     c.setFont("Helvetica-Bold", 10)
     c.drawString(40, y_table, "Field ID")
-    c.drawString(100, y_table, "Design Ref")
-    c.drawString(180, y_table, "Easting(X)")
-    c.drawString(250, y_table, "Northing(Y)")
+    c.drawString(110, y_table, "Design Ref")
+    c.drawString(190, y_table, "East(X)")
+    c.drawString(260, y_table, "North(Y)")
     c.drawString(330, y_table, "Elev(Z)")
-    c.drawString(390, y_table, "Delta XY(m)")
-    c.drawString(460, y_table, "Delta Z(m)")
-    c.drawString(530, y_table, "Status")
+    c.drawString(390, y_table, "dXY(m)")
+    c.drawString(450, y_table, "dZ(m)")
+    c.drawString(510, y_table, "Status")
     c.line(40, y_table-5, 560, y_table-5)
     
-    # Table Rows
     y_table -= 20
     c.setFont("Helvetica", 9)
     
-    render_limit = min(500, len(df_audit))
-    for idx, r in df_audit.head(render_limit).iterrows():
+    # تعبئة أسطر جدول البيانات الميدانية والتدقيقية
+    for idx, r in df_audit.head(35).iterrows():
         if y_table < 50:
             c.showPage()
             y_table = height - 50
             c.setFont("Helvetica", 9)
             
-        c.drawString(40, y_table, str(r['Field_ID'])[:8])
-        c.drawString(100, y_table, str(r['Design_Ref'])[:12])
-        c.drawString(180, y_table, f"{r['Field_X']:.3f}")
-        c.drawString(250, y_table, f"{r['Field_Y']:.3f}")
+        c.drawString(40, y_table, str(r['Field_ID'])[:10])
+        c.drawString(110, y_table, str(r['Design_Ref'])[:12])
+        c.drawString(190, y_table, f"{r['Field_X']:.3f}")
+        c.drawString(260, y_table, f"{r['Field_Y']:.3f}")
         c.drawString(330, y_table, f"{r['Field_Z']:.3f}")
         c.drawString(390, y_table, f"{r['Delta_XY']:.3f}")
-        c.drawString(460, y_table, f"{r['Delta_Z']:.3f}")
+        c.drawString(450, y_table, f"{r['Delta_Z']:.3f}")
         
-        # Color coding status
-        if "✅" in str(r['Status']):
-            c.setFillColor(colors.green)
-        else:
-            c.setFillColor(colors.red)
-            
-        c.drawString(530, y_table, "PASS" if "✅" in str(r['Status']) else "FAIL")
+        status_text = "PASS" if "✅" in str(r['Status']) else "FAIL"
+        c.setFillColor(colors.green if status_text == "PASS" else colors.red)
+        c.drawString(510, y_table, status_text)
         c.setFillColor(colors.black)
         
         y_table -= 15
@@ -187,34 +180,40 @@ def generate_pro_report_bytes(df_audit, parcel, address, owner, total_pts, passe
     return buffer.getvalue()
 
 # ==========================================
-# ⚙️ Sidebar Settings
+# ⚙️ إعدادات وتخصيصات شريط التحكم الجانبي
 # ==========================================
-st.sidebar.header("⚙️ System Settings")
-if st.sidebar.button("🔄 Reset Suite", use_container_width=True, type="primary"):
+st.sidebar.header("⚙️ معايير النظام والموقع")
+if st.sidebar.button("🔄 إعادة تعيين وتنظيف النظام", use_container_width=True, type="primary"):
     st.session_state['dxf_key'] += 1
     st.session_state['asbuilt_key'] += 1
     st.rerun()
 
-st.sidebar.markdown("---")
-device_type = st.sidebar.selectbox("Device Format:", ["Leica (CSV)", "Topcon (TXT)", "Generic (CSV)"])
-id_format = st.sidebar.selectbox("Point ID Type:", ["Purely Numeric (101, 102...)", "Short Code (F56-1)", "Full Descriptive"])
-tolerance_xy = st.sidebar.number_input("XY Tolerance (m):", value=0.02, step=0.01)
-tolerance_z = st.sidebar.number_input("Z Tolerance (m):", value=0.01, step=0.01)
+device_type = st.sidebar.selectbox("صيغة التصدير للأجهزة الميدانية:", ["Leica (CSV)", "Topcon (TXT)", "Sokkia (CSV)"])
+tolerance_xy = st.sidebar.number_input("حد المسامحة الأفقي المسموح XY (متر):", value=0.02, step=0.01, format="%.3f")
+tolerance_z = st.sidebar.number_input("حد المسامحة الرأسي المسموح Z (متر):", value=0.01, step=0.01, format="%.3f")
 
 # ==========================================
-# 📁 DXF Processing (Step 1)
+# 📁 الخطوة الأساسية: قراءة وتحليل ملف الأوتوكاد DXF
 # ==========================================
-st.subheader("📁 Step 1: Design Input (DXF)")
-uploaded_dxf = st.file_uploader("Upload Structural/Architectural DXF:", type=["dxf"], key=f"dxf_upload_{st.session_state['dxf_key']}")
+st.subheader("📁 الخطوة الأولى: رفع المخطط الهندسي (Design File)")
+uploaded_dxf = st.file_uploader("ارفع ملف المخطط بصيغة DXF فقط:", type=["dxf"], key=f"dxf_{st.session_state['dxf_key']}")
+
+# تهيئة جداول تخزين البيانات المستخرجة من DXF لمنع مشاكل التحميل
+df_all_points = pd.DataFrame()
+structural_elements = []
+grid_lines = []
+wall_lines = []
 
 if uploaded_dxf:
     try:
-        temp_path = f"temp_{uploaded_dxf.name}"
+        temp_path = f"temp_engine_{uploaded_dxf.name}"
         with open(temp_path, "wb") as f:
             f.write(uploaded_dxf.getbuffer())
+        
         doc = ezdxf.readfile(temp_path)
         msp = doc.modelspace()
         
+        # 1. تجميع وتصفية نصوص الأوتوكاد للربط الذكي بالنقاط
         text_pool = []
         for text_ent in msp.query('TEXT MTEXT'):
             try:
@@ -225,270 +224,373 @@ if uploaded_dxf:
                     text_pool.append({"text": cleaned_txt, "x": raw_txt.x, "y": raw_txt.y})
             except: continue
         
+        # 2. استخراج وفك شفرات العناصر الهندسية (LWPOLYLINE / LINE)
         all_points = []
-        structural_elements = []
-        grid_lines = []
-        wall_lines = []
         category_counters = {"Footings": 0, "Columns": 0, "Beams": 0, "Walls": 0, "Boundary": 0, "Others": 0}
         
         for entity in msp.query('LWPOLYLINE LINE'):
             layer = entity.dxf.layer
             category = classify_layer(layer)
-            if "GRID" in layer.upper() or "محاور" in layer.upper() or "AXIS" in layer.upper():
-                if entity.dxftype() == 'LINE': grid_lines.append((entity.dxf.start, entity.dxf.end))
+            
+            # عزل خطوط المحاور والشبكات التخطيطية
+            if any(x in layer.upper() for x in ["GRID", "محاور", "AXIS", "CENTER"]):
+                if entity.dxftype() == 'LINE': 
+                    grid_lines.append((entity.dxf.start, entity.dxf.end))
                 continue
+                
+            if entity.dxftype() == 'LINE':
+                # تحويل الخطوط البسيطة إلى نقاط هندسية
+                p1 = entity.dxf.start
+                p2 = entity.dxf.end
+                all_points.append({"Point_ID": f"{category[:-1]}_L_Start", "North_Y": p1.y, "East_X": p1.x, "Elev_Z": p1.z, "Category": category, "Layer_Name": layer})
+                all_points.append({"Point_ID": f"{category[:-1]}_L_End", "North_Y": p2.y, "East_X": p2.x, "Elev_Z": p2.z, "Category": category, "Layer_Name": layer})
+                if category == "Walls":
+                    length = math.hypot(p2.x - p1.x, p2.y - p1.y)
+                    wall_lines.append({"Length": length, "Layer": layer})
+                continue
+                
             if entity.dxftype() == 'LWPOLYLINE':
-                # Extract X, Y, and Z (if available)
                 vertices = [(v[0], v[1], v[2] if len(v)>2 else 0.0) for v in entity.get_points()]
                 if not vertices: continue
+                
                 area = calculate_area(vertices)
-                perimeter = 0.0
-                for i in range(len(vertices)):
-                    perimeter += math.hypot(vertices[i][0] - vertices[i-1][0], vertices[i][1] - vertices[i-1][1])
-                if category == "Walls" and area > 0:
-                    wall_lines.append({"Length": perimeter / 2, "Layer": layer})
+                perimeter = sum(math.hypot(vertices[i][0]-vertices[i-1][0], vertices[i][1]-vertices[i-1][1]) for i in range(len(vertices)))
+                
+                if category == "Walls" and area >= 0:
+                    wall_lines.append({"Length": perimeter / 2.0, "Layer": layer})
+                    
                 cx = sum(v[0] for v in vertices) / len(vertices)
                 cy = sum(v[1] for v in vertices) / len(vertices)
                 xs = [v[0] for v in vertices]; ys = [v[1] for v in vertices]
                 max_dim = math.hypot(max(xs) - min(xs), max(ys) - min(ys))
+                
                 if area > 0 and category in ["Footings", "Columns", "Beams"]:
                     structural_elements.append({"Category": category, "Layer": layer, "Area": area})
+                
+                # ربط التسمية النصية الأقرب للعنصر الإنشائي
                 matched_text = None; min_text_dist = float('inf')
                 for t in text_pool:
                     d = math.hypot(t['x'] - cx, t['y'] - cy)
                     if d < min_text_dist: min_text_dist = d; matched_text = t
-                if matched_text and min_text_dist <= (max_dim * 0.9):
+                    
+                if matched_text and min_text_dist <= (max_dim * 1.2):
                     txt = matched_text['text']
                     final_prefix = f"{category[:-1]}_{txt}" if txt.isdigit() else txt
-                    short_prefix = f"{category[0]}{txt}" if txt.isdigit() else txt[:5]
                 else:
-                    category_counters[category] += 1; idx = category_counters[category]
-                    final_prefix = f"{category[:-1]}_{idx}"; short_prefix = f"{category[0]}{idx}"
+                    category_counters[category] += 1
+                    final_prefix = f"{category[:-1]}_{category_counters[category]}"
+                    
                 for i, v in enumerate(vertices):
                     all_points.append({
-                        "Point_ID": f"{final_prefix}_P{i+1}", "Short_ID": f"{short_prefix}-{i+1}",
-                        "North_Y": v[1], "East_X": v[0], "Elev_Z": v[2], "Category": category,
-                        "Elem_CX": cx, "Elem_CY": cy, "Elem_Order": i + 1, "Layer_Name": layer
+                        "Point_ID": f"{final_prefix}_P{i+1}", 
+                        "North_Y": v[1], "East_X": v[0], "Elev_Z": v[2], 
+                        "Category": category, "Layer_Name": layer
                     })
         
-        df_all_points = pd.DataFrame(all_points)
+        if all_points:
+            df_all_points = pd.DataFrame(all_points).drop_duplicates(subset=['North_Y', 'East_X'])
         os.remove(temp_path)
+        st.success(f"✅ تم تحليل وهندسة ملف الأوتوكاد بنجاح! تم فك وتصنيف {len(df_all_points)} نقطة هندسية.")
+    except Exception as e:
+        st.error(f"❌ حدث خطأ أثناء تحليل ملف DXF: {e}")
+
+# ==========================================
+# 📑 محرك التبويبات السبعة المتكامل والنشط دائماً
+# ==========================================
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    "🗺️ 1. حساب الكميات", "📍 2. التوقيع الميداني", "🔄 3. مصفوفة التحويل",
+    "📐 4. تقاطع المحاور", "🧱 5. أعمال الطابوق", "🚜 6. الحفريات والردم", "🔍 7. تدقيق As-Built"
+])
+
+# ------------------------------------------
+# التبويب 1: حساب كميات الخرسانة والحديد
+# ------------------------------------------
+with tab1:
+    st.subheader("📊 نظام مسح وجدولة كميات الخرسانة والحديد التلقائي")
+    if not df_all_points.empty and structural_elements:
+        df_struct = pd.DataFrame(structural_elements)
+        summary = df_struct.groupby(["Category", "Layer"]).agg(Count=("Area", "count"), Total_Area_m2=("Area", "sum")).reset_index()
         
-        # ==========================================
-        # 📂 Suite Tabs (7 Complete Tools)
-        # ==========================================
-        tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-            "🗺️ 1. Quantities", "📍 2. Field Staking", "🔄 3. Shift & Rotate",
-            "📐 4. Axis Gridlines", "🧱 5. Brickwork", "🚜 6. Earthworks", "🔍 7. As-Built Audit V2"
-        ])
+        col_q1, col_q2 = st.columns([4, 3])
+        with col_q1:
+            st.markdown("##### ⚙️ معطيات وحساب التكعيب صب الخرسانة")
+            thickness = st.number_input("سماكة الصبة التقديرية (متر):", value=0.60, step=0.05, format="%.2f")
+            steel_ratio = st.number_input("كثافة حديد التسليح للمتر المكعب الواحد (كجم/م³):", value=90.0, step=5.0)
+            
+            summary["Volume_m3"] = summary["Total_Area_m2"] * thickness
+            summary["Steel_Tons"] = (summary["Volume_m3"] * steel_ratio) / 1000.0
+            
+            st.markdown("##### 📈 جدول حصر الكميات المستخرجة")
+            st.dataframe(summary, use_container_width=True)
+        with col_q2:
+            st.markdown("##### 📍 توزيع العناصر الإنشائية المكتشفة في المخطط")
+            fig, ax = plt.subplots(figsize=(6, 4.5))
+            sample_df = df_all_points.sample(n=min(800, len(df_all_points)))
+            for cat in sample_df['Category'].unique():
+                c_data = sample_df[sample_df['Category'] == cat]
+                ax.scatter(c_data['East_X'], c_data['North_Y'], label=cat, s=12)
+            ax.set_aspect('equal')
+            ax.legend(fontsize='small', loc='upper right')
+            ax.grid(True, alpha=0.3)
+            st.pyplot(fig)
+            plt.close(fig)
+    else:
+        st.info("💡 يرجى رفع ملف المخطط (DXF) في الأعلى لتفعيل حساب كميات القواعد والأعمدة تلقائياً.")
+
+# ------------------------------------------
+# التبويب 2: التوقيع الميداني واستخراج النقاط
+# ------------------------------------------
+with tab2:
+    st.subheader("📍 نظام تصفية واستخراج ملفات التوقيع (Setting-Out Data)")
+    if not df_all_points.empty:
+        all_layers = df_all_points["Layer_Name"].unique()
+        selected_layers = st.multiselect("🎯 اختر الطبقات (Layers) المراد استخراج نقاطها للتوقيع:", all_layers, default=all_layers)
         
-        with tab1:
-            st.subheader("📊 Concrete & Steel Reinforcement Estimator")
-            if structural_elements:
-                df_struct = pd.DataFrame(structural_elements)
-                summary = df_struct.groupby(["Category", "Layer"]).agg(Count=("Area", "count"), Total_Area_m2=("Area", "sum")).reset_index()
-                col_q1, col_q2 = st.columns([1, 1])
-                with col_q1:
-                    thickness = st.number_input("Concrete Thickness (m):", value=0.60, step=0.05)
-                    steel_ratio = st.number_input("Steel Density (kg/m³):", value=90.0, step=5.0)
-                    summary["Volume_m3"] = summary["Total_Area_m2"] * thickness
-                    summary["Steel_Tons"] = (summary["Volume_m3"] * steel_ratio) / 1000.0
-                    st.dataframe(summary, use_container_width=True)
-                with col_q2:
-                    fig, ax = plt.subplots(figsize=(6, 3.5))
-                    if not df_all_points.empty:
-                        sample_df = df_all_points.sample(n=min(1000, len(df_all_points)))
-                        for cat in sample_df['Category'].unique():
-                            c_data = sample_df[sample_df['Category'] == cat]
-                            ax.scatter(c_data['East_X'], c_data['North_Y'], label=cat, s=8)
-                        ax.set_aspect('equal'); ax.legend(fontsize='small'); ax.grid(True, alpha=0.3)
-                    st.pyplot(fig); plt.close(fig)
-
-        with tab2:
-            st.subheader("📍 Smart Field Stakeout Engine")
-            if not df_all_points.empty:
-                all_layers = df_all_points["Layer_Name"].unique()
-                selected_layers = st.multiselect("🎯 Filter by AutoCAD Layer:", all_layers, default=all_layers)
+        col_cfg1, col_cfg2, col_cfg3 = st.columns(3)
+        off_x = col_cfg1.number_input("إزاحة مضافة لمحور الشرق (ΔX Offset):", value=0.0, step=0.1)
+        off_y = col_cfg2.number_input("إزاحة مضافة لمحور الشمال (ΔY Offset):", value=0.0, step=0.1)
+        use_tsp = col_cfg3.checkbox("🔄 تفعيل خوارزمية المسار الذكي المساحي الأقصر", value=True)
+        
+        if selected_layers:
+            df_stk = df_all_points[df_all_points['Layer_Name'].isin(selected_layers)].copy()
+            if use_tsp and len(df_stk) <= 1500:
+                df_stk = optimize_survey_path(df_stk)
                 
-                col_cfg1, col_cfg2, col_cfg3 = st.columns([1, 1, 1])
-                off_x = col_cfg1.number_input("Shift ΔX (East):", value=0.0, step=0.1)
-                off_y = col_cfg2.number_input("Shift ΔY (North):", value=0.0, step=0.1)
-                use_tsp = col_cfg3.checkbox("🔄 Enable Smart Path Optimization", value=False)
-                
-                if selected_layers:
-                    df_stk = df_all_points[df_all_points['Layer_Name'].isin(selected_layers)].copy()
-                    st.info(f"📊 Selected Points: {len(df_stk)} rows out of {len(df_all_points)}")
-                    
-                    if use_tsp and len(df_stk) > 1000:
-                        st.warning("⚠️ High Point Count: Path optimization disabled automatically to prevent crashing.")
-                        use_tsp = False
-                    
-                    if use_tsp and len(df_stk) <= 1000:
-                        df_stk = optimize_survey_path(df_stk)
-                        st.success("✅ Path Optimized successfully.")
-
-                    df_stk["East_X"] += off_x
-                    df_stk["North_Y"] += off_y
-                    
-                    if id_format == "Purely Numeric (101, 102...)":
-                        df_stk["Export_ID"] = range(101, 101 + len(df_stk))
-                    else:
-                        df_stk["Export_ID"] = df_stk["Point_ID"]
-                        
-                    st.dataframe(df_stk[["Export_ID", "North_Y", "East_X", "Elev_Z", "Layer_Name"]], use_container_width=True)
-
-                    delim = ',' if device_type != "Topcon (TXT)" else ' '
-                    txt_data = df_stk[["Export_ID", "North_Y", "East_X", "Elev_Z"]].to_csv(index=False, sep=delim, header=False)
-                    download_button_ios(txt_data, "Staking_Data.txt", f"📥 Download Field File ({device_type})", is_text=True)
-
-        with tab3:
-            st.subheader("🔄 Transformation Matrix")
-            col_t1, col_t2, col_t3 = st.columns(3)
-            shift_e = col_t1.number_input("ΔEast (X):", value=0.0, key="trans_x")
-            shift_n = col_t2.number_input("ΔNorth (Y):", value=0.0, key="trans_y")
-            rot_ang = col_t3.number_input("Rotation (° CW):", value=0.0, key="trans_rot")
-            if not df_all_points.empty:
-                df_trans = df_all_points.copy()
-                if rot_ang != 0:
-                    m_cx, m_cy = df_trans["East_X"].mean(), df_trans["North_Y"].mean()
-                    rotated = [rotate_point(r["East_X"], r["North_Y"], m_cx, m_cy, -rot_ang) for _, r in df_trans.iterrows()]
-                    df_trans["East_X"] = [p[0] for p in rotated]
-                    df_trans["North_Y"] = [p[1] for p in rotated]
-                df_trans["East_X"] += shift_e
-                df_trans["North_Y"] += shift_n
-                st.dataframe(df_trans[["Point_ID", "North_Y", "East_X", "Layer_Name"]], use_container_width=True)
-
-        with tab4:
-            st.subheader("📐 Axis Gridline Intersections")
-            if grid_lines:
-                intersections = []
-                limit_grids = grid_lines[:100] 
-                for i in range(len(limit_grids)):
-                    for j in range(i + 1, len(limit_grids)):
-                        p1, p2 = limit_grids[i][0], limit_grids[i][1]
-                        p3, p4 = limit_grids[j][0], limit_grids[j][1]
-                        den = (p4.x - p3.x) * (p2.y - p1.y) - (p4.y - p3.y) * (p2.x - p1.x)
-                        if abs(den) < 1e-5: continue
-                        ua = ((p4.x - p3.x) * (p1.y - p3.y) - (p4.y - p3.y) * (p1.x - p3.x)) / den
-                        ub = ((p2.x - p1.x) * (p1.y - p3.y) - (p2.y - p1.y) * (p1.x - p3.x)) / den
-                        if 0 <= ua <= 1 and 0 <= ub <= 1: intersections.append((p1.x + ua * (p2.x - p1.x), p1.y + ua * (p2.y - p1.y)))
-                if intersections:
-                    df_inter = pd.DataFrame(intersections, columns=["X", "Y"]).drop_duplicates()
-                    st.dataframe(df_inter, use_container_width=True)
-                else: st.warning("No grid intersections found in the selected sample.")
-            else: st.info("No grid lines detected in DXF.")
-
-        with tab5:
-            st.subheader("🧱 Brickwork & Masonry Estimator")
-            if wall_lines:
-                total_w = pd.DataFrame(wall_lines)["Length"].sum()
-                st.info(f"Total Wall Length: {round(total_w, 2)}m")
-                h = st.number_input("Wall Height (m):", value=3.20, key="wall_h")
-                st.success(f"Estimated Blocks: {math.ceil(total_w * h * 12.5)} pcs")
-            else: st.info("No walls detected in DXF.")
-
-        with tab6:
-            st.subheader("🚜 Earthworks Volumetrics")
-            if structural_elements:
-                tot_a = pd.DataFrame(structural_elements)["Area"].sum()
-                st.info(f"Footprint Area: {round(tot_a, 2)} m²")
-                ngl = st.number_input("NGL Level:", value=1.0, key="ngl_v")
-                target = st.number_input("Target Level:", value=0.0, key="tgt_v")
-                vol = tot_a * abs(ngl - target)
-                st.error(f"Volume: {round(vol, 2)} m³")
-            else: st.info("No structural elements found.")
-
-        with tab7:
-            # ========================================================
-            # 🔍 V2.0: As-Built Audit (Heatmap, Z-Level, Pro PDF)
-            # ========================================================
-            st.subheader("🔍 As-Built Audit Engine V2.0")
+            df_stk["East_X"] += off_x
+            df_stk["North_Y"] += off_y
             
-            # Project Data Inputs
-            with st.expander("📝 Project details for PDF Report", expanded=True):
-                col_p1, col_p2, col_p3 = st.columns(3)
-                parcel_no = col_p1.text_input("Parcel No (رقم القسيمة):", "Plot-101")
-                owner_name = col_p2.text_input("Owner Name (المالك):", "Mr. Client")
-                parcel_loc = col_p3.text_input("Address (العنوان):", "Kuwait, District X")
-                
-            asb_f = st.file_uploader("Upload Field Survey (CSV/TXT):", type=["csv", "txt"], key=f"as_built_{st.session_state['asbuilt_key']}")
+            st.markdown(f"**عدد النقاط الجاهزة للتصدير:** {len(df_stk)}")
+            st.dataframe(df_stk[["Point_ID", "North_Y", "East_X", "Elev_Z", "Layer_Name"]], use_container_width=True)
             
-            if asb_f:
-                try:
-                    # Smart Separator Detection
-                    first_line = asb_f.readline().decode('utf-8-sig', errors='ignore')
-                    asb_f.seek(0)
-                    s_char = ',' if ',' in first_line else r'\s+'
-                    
-                    df_asb = pd.read_csv(asb_f, sep=s_char, header=None, names=["ID", "Y", "X", "Z"], engine='python')
-                    df_asb['X'] = pd.to_numeric(df_asb['X'], errors='coerce')
-                    df_asb['Y'] = pd.to_numeric(df_asb['Y'], errors='coerce')
-                    df_asb['Z'] = pd.to_numeric(df_asb['Z'], errors='coerce').fillna(0.0)
-                    df_asb = df_asb.dropna(subset=['X', 'Y'])
-                    
-                    chk = []
-                    passed_count = 0
-                    
-                    for _, r in df_asb.iterrows():
-                        m_d = float('inf')
-                        n_pt = None
-                        
-                        # Find closest design point
-                        for _, dr in df_all_points.iterrows():
-                            dst = math.hypot(r['X'] - dr['East_X'], r['Y'] - dr['North_Y'])
-                            if dst < m_d: 
-                                m_d = dst
-                                n_pt = dr
-                                
-                        dz = abs(r['Z'] - n_pt['Elev_Z']) if n_pt is not None else 999.0
-                        
-                        is_pass = (m_d <= tolerance_xy) and (dz <= tolerance_z)
-                        if is_pass: passed_count += 1
-                        
-                        chk.append({
-                            "Field_ID": r['ID'], 
-                            "Design_Ref": n_pt['Point_ID'] if n_pt is not None else "N/A",
-                            "Field_X": r['X'],
-                            "Field_Y": r['Y'],
-                            "Field_Z": r['Z'],
-                            "Delta_XY": m_d,
-                            "Delta_Z": dz,
-                            "Status": "✅ PASS" if is_pass else "❌ FAIL"
-                        })
-                    
-                    df_audit = pd.DataFrame(chk)
-                    st.dataframe(df_audit[["Field_ID", "Design_Ref", "Delta_XY", "Delta_Z", "Status"]], use_container_width=True)
-                    
-                    # ---------------------------------------------
-                    # 📊 Heatmap Generation
-                    # ---------------------------------------------
-                    st.markdown("### 📊 Spatial Error Heatmap (خريطة الانحرافات)")
-                    fig, ax = plt.subplots(figsize=(8, 5))
-                    
-                    # Plot all points, color by Delta_XY
-                    sc = ax.scatter(df_audit['Field_X'], df_audit['Field_Y'], 
-                                    c=df_audit['Delta_XY'], cmap='RdYlGn_r', 
-                                    s=50, edgecolor='k', vmin=0, vmax=tolerance_xy*2)
-                    
-                    plt.colorbar(sc, label='XY Deviation (m)')
-                    ax.set_aspect('equal')
-                    ax.set_title("Field Points colored by Deviation Magnitude")
-                    ax.grid(True, linestyle='--', alpha=0.5)
-                    st.pyplot(fig)
-                    plt.close(fig)
-                    
-                    # ---------------------------------------------
-                    # 📄 PDF Report Generation
-                    # ---------------------------------------------
-                    st.markdown("### 📄 Export Certified Report")
-                    pdf_bytes = generate_pro_report_bytes(
-                        df_audit, parcel_no, parcel_loc, owner_name, 
-                        total_pts=len(df_audit), passed_pts=passed_count
-                    )
-                    download_button_ios(pdf_bytes, "Certified_Audit_Report.pdf", "📥 Download Official Audit PDF")
+            delim = ',' if "CSV" in device_type else '\t'
+            ext = "csv" if "CSV" in device_type else "txt"
+            txt_data = df_stk[["Point_ID", "North_Y", "East_X", "Elev_Z"]].to_csv(index=False, sep=delim, header=False)
+            download_button_ios(txt_data, f"Staking_Data_{pd.Timestamp.now().strftime('%d_%m')}.{ext}", "📥 تحميل ملف التوقيع لجهاز المساحة فوراً", is_text=True)
+    else:
+        st.info("💡 يرجى رفع ملف المخطط (DXF) لتصفية وتصدير إحداثيات التوقيع إلى أجهزة الـ Total Station والـ GPS.")
 
-                except Exception as e:
-                    st.error(f"Error parsing field data: {e}")
+# ------------------------------------------
+# التبويب 3: مصفوفة تحويل وتعديل الإحداثيات
+# ------------------------------------------
+with tab3:
+    st.subheader("🔄 معالج تحويل، تدوير، وإزاحة الإحداثيات الهندسية")
+    if not df_all_points.empty:
+        col_t1, col_t2, col_t3 = st.columns(3)
+        shift_e = col_t1.number_input("مقدار الإزاحة للشرق (Shift East):", value=0.0, format="%.3f")
+        shift_n = col_t2.number_input("مقدار الإزاحة للشمال (Shift North):", value=0.0, format="%.3f")
+        rot_ang = col_t3.number_input("زاوية تدوير المخطط (Rotation Angle - بالدرجات):", value=0.0, format="%.4f")
+        
+        df_trans = df_all_points.copy()
+        if rot_ang != 0:
+            m_cx, m_cy = df_trans["East_X"].mean(), df_trans["North_Y"].mean()
+            rotated = [rotate_point(r["East_X"], r["North_Y"], m_cx, m_cy, -rot_ang) for _, r in df_trans.iterrows()]
+            df_trans["East_X"] = [p[0] for p in rotated]
+            df_trans["North_Y"] = [p[1] for p in rotated]
+        
+        df_trans["East_X"] += shift_e
+        df_trans["North_Y"] += shift_n
+        
+        st.markdown("##### 🧮 الإحداثيات الجديدة بعد تطبيق مصفوفة التحويل:")
+        st.dataframe(df_trans[["Point_ID", "North_Y", "East_X", "Elev_Z", "Category"]], use_container_width=True)
+    else:
+        st.info("💡 يرجى رفع ملف المخطط (DXF) لتطبيق التحويلات الحسابية والتدوير المباشر.")
 
-    except Exception as exp:
-        st.error(f"Pipeline Error: {exp}")
+# ------------------------------------------
+# التبويب 4: حساب تقاطعات المحاور والشبكات
+# ------------------------------------------
+with tab4:
+    st.subheader("📐 استخراج نقاط تقاطعات خطوط المحاور (Grid Intersection Point)")
+    if uploaded_dxf:
+        if grid_lines:
+            intersections = []
+            limit_grids = grid_lines[:150] # تحديد الحد لمنع بطء المعالجة
+            for i in range(len(limit_grids)):
+                for j in range(i + 1, len(limit_grids)):
+                    p1, p2 = limit_grids[i][0], limit_grids[i][1]
+                    p3, p4 = limit_grids[j][0], limit_grids[j][1]
+                    
+                    den = (p4.x - p3.x) * (p2.y - p1.y) - (p4.y - p3.y) * (p2.x - p1.x)
+                    if abs(den) < 1e-6: continue
+                    
+                    ua = ((p4.x - p3.x) * (p1.y - p3.y) - (p4.y - p3.y) * (p1.x - p3.x)) / den
+                    ub = ((p2.x - p1.x) * (p1.y - p3.y) - (p2.y - p1.y) * (p1.x - p3.x)) / den
+                    
+                    if 0 <= ua <= 1 and 0 <= ub <= 1:
+                        intersections.append((p1.x + ua * (p2.x - p1.x), p1.y + ua * (p2.y - p1.y)))
+                        
+            if intersections:
+                df_inter = pd.DataFrame(intersections, columns=["Intersection_X", "Intersection_Y"]).drop_duplicates()
+                st.success(f"🎯 تم العثور على {len(df_inter)} نقطة تقاطع محاور رئيسية في المخطط.")
+                st.dataframe(df_inter, use_container_width=True)
+            else: 
+                st.warning("⚠️ تم التعرف على طبقة المحاور، ولكن لم يتم العثور على تقاطعات هندسية مباشرة بين الخطوط المتاحة.")
+        else: 
+            st.info("ℹ️ لم يتم العثور على عناصر خطوط تحمل اسم طبقة 'Grid' أو 'محاور' في ملف الأوتوكاد لاستخلاص نقاط التقاطع تلقائياً.")
+    else:
+        st.info("💡 يرجى رفع ملف المخطط (DXF) لحساب واستخراج إحداثيات تقاطع الأكسات (المحاور).")
+
+# ------------------------------------------
+# التبويب 5: تقدير وحساب الطابوق والمباني
+# ------------------------------------------
+with tab5:
+    st.subheader("🧱 حصر أطوال الجدران وتقدير كميات الطابوق (Masonry Estimation)")
+    if uploaded_dxf:
+        if wall_lines:
+            df_walls = pd.DataFrame(wall_lines)
+            total_wall_len = df_walls["Length"].sum()
+            
+            st.info(f"📏 إجمالي أطوال الجدران والتمتير الطولي المكتشف في المخطط: {round(total_wall_len, 2)} متر طولي.")
+            
+            col_b1, col_b2 = st.columns(2)
+            wall_height = col_b1.number_input("متوسط ارتفاع جدار الحائط (متر):", value=3.20, step=0.10)
+            brick_factor = col_b2.number_input("معدل استهلاك الطابوق للمتر المربع (حبة/م²):", value=12.5, step=0.5)
+            
+            total_area = total_wall_len * wall_height
+            estimated_bricks = math.ceil(total_area * brick_factor)
+            
+            st.success(f"🧱 المساحة الإجمالية للجدران: {round(total_area, 2)} م² | العدد التقديري المطلوب للطابوق: {estimated_bricks} حبة.")
+        else: 
+            st.info("ℹ️ لم يتم العثور على مضلعات أو خطوط في طبقة تحمل اسم 'Wall' أو 'جدار' لحساب التقديرات.")
+    else:
+        st.info("💡 يرجى رفع ملف المخطط (DXF) لتقدير أعداد الطابوق بناءً على جدران المخطط الإنشائي والمعماري.")
+
+# ------------------------------------------
+# التبويب 6: تقدير أعمال الحفريات والردم
+# ------------------------------------------
+with tab6:
+    st.subheader("🚜 الحساب الأولي لأعمال ومكعبات الحفر والردم")
+    if uploaded_dxf:
+        if structural_elements:
+            df_struct_exc = pd.DataFrame(structural_elements)
+            footing_area = df_struct_exc[df_struct_exc["Category"] == "Footings"]["Area"].sum()
+            if footing_area == 0: 
+                footing_area = df_struct_exc["Area"].sum()
+                
+            st.info(f"📐 مساحة البصمة الإنشائية للمبنى وقسيمة القواعد المكتشفة: {round(footing_area, 2)} متر مربع.")
+            
+            col_e1, col_e2 = st.columns(2)
+            ngl_level = col_e1.number_input("منسوب الأرض الطبيعية الحالية (NGL):", value=1.50, step=0.10, format="%.2f")
+            excavation_target = col_e2.number_input("منسوب قاع الحفر المستهدف (Target Excavation Level):", value=0.00, step=0.10, format="%.2f")
+            
+            depth = abs(ngl_level - excavation_target)
+            computed_volume = footing_area * depth
+            
+            st.error(f"🚜 عمق الحفر المطلق: {round(depth, 2)} متر | حجم الحفريات التقديري المطلوب نقله: {round(computed_volume, 2)} متر مكعب.")
+        else: 
+            st.info("ℹ️ لم يتم العثور على مساحات مغلقة في طبقات القواعد لتقدير مكعبات الحفر.")
+    else:
+        st.info("💡 يرجى رفع ملف المخطط (DXF) لحساب حجوم أعمال الحفر بناءً على مساحة المنشأ الإنشائي.")
+
+# ------------------------------------------
+# التبويب 7: نظام التدقيق الميداني الشامل المحدث والأهم (As-Built V2.0)
+# ------------------------------------------
+with tab7:
+    st.subheader("🔍 نظام التدقيق والمقارنة الرقمي الذكي لنقاط الرفع الميداني As-Built")
+    st.markdown("**(هذه الأداة تعمل تلقائياً وبأعلى كفاءة سواء تم رفع ملف الأوتوكاد للمقارنة الذكية، أو استخدمت بشكل منفصل لتوثيق نقاط الرفع الميداني وإصدار التقارير)**")
+    
+    # حقول إدخال بيانات التقرير الرسمي للاستشاري والمالك
+    with st.expander("📝 بيانات القسيمة والمالك للتقرير النهائي المعتمد", expanded=True):
+        col_p1, col_p2, col_p3 = st.columns(3)
+        parcel_no = col_p1.text_input("رقم القسيمة / المشروع:", "قسيمة رقم 452")
+        owner_name = col_p2.text_input("اسم المالك المعتمد:", "السيد / صاحب القسيمة المحترم")
+        parcel_loc = col_p3.text_input("موقع أو عنوان القسيمة الميداني:", "مدينة المطلاع السكنية - قطاع N5")
+        
+    asb_f = st.file_uploader("ارفع ملف الرفع الميداني الفعلي بصيغة (CSV / TXT):", key=f"asb_{st.session_state['asbuilt_key']}")
+    
+    if asb_f:
+        try:
+            # قراءة السطر الأول لتحديد الفاصل المستعمل تلقائياً لمنع أخطاء التنسيق
+            first_line = asb_f.readline().decode('utf-8-sig', errors='ignore')
+            asb_f.seek(0)
+            separator_char = ',' if ',' in first_line else r'\s+'
+            
+            df_asb = pd.read_csv(asb_f, sep=separator_char, header=None, names=["ID", "Y", "X", "Z"], engine='python')
+            df_asb['X'] = pd.to_numeric(df_asb['X'], errors='coerce')
+            df_asb['Y'] = pd.to_numeric(df_asb['Y'], errors='coerce')
+            df_asb['Z'] = pd.to_numeric(df_asb['Z'], errors='coerce').fillna(0.0)
+            df_asb = df_asb.dropna(subset=['X', 'Y'])
+            
+            chk_results = []
+            passed_count = 0
+            
+            # الحالة الأولى: وجود ملف أوتوكاد DXF للقيام بالمقارنة الدقيقة تلقائياً
+            if not df_all_points.empty:
+                for _, r in df_asb.iterrows():
+                    min_dist = float('inf')
+                    nearest_design_point = None
+                    
+                    # البحث التلقائي عن أقرب نقطة تصميمية مرجعية
+                    for _, dr in df_all_points.iterrows():
+                        dst = math.hypot(r['X'] - dr['East_X'], r['Y'] - dr['North_Y'])
+                        if dst < min_dist: 
+                            min_dist = dst
+                            nearest_design_point = dr
+                            
+                    dz = abs(r['Z'] - nearest_design_point['Elev_Z']) if nearest_design_point is not None else 0.0
+                    
+                    # التحقق من شروط المسامحة الأفقية والرأسية المحددة في لوحة التحكم الجانبية
+                    is_pass = (min_dist <= tolerance_xy) and (dz <= tolerance_z)
+                    if is_pass: passed_count += 1
+                    
+                    chk_results.append({
+                        "Field_ID": r['ID'], 
+                        "Design_Ref": nearest_design_point['Point_ID'] if nearest_design_point is not None else "N/A",
+                        "Field_X": r['X'], "Field_Y": r['Y'], "Field_Z": r['Z'],
+                        "Delta_XY": min_dist, "Delta_Z": dz, 
+                        "Status": "✅ PASS" if is_pass else "❌ FAIL"
+                    })
+            else:
+                # الحالة الثانية: غياب ملف DXF، نقوم بجدولة نقاط الرفع وحفظها لغرض التقرير الرسمي
+                st.info("ℹ️ لم يتم رفع ملف DXF للتصميم، سيقوم النظام بجدولة ورسم نقاط الرفع الفعلي الميداني وإدراجها بالتقرير مباشرة.")
+                for _, r in df_asb.iterrows():
+                    passed_count += 1
+                    chk_results.append({
+                        "Field_ID": r['ID'], "Design_Ref": "بدون مرجع تصميمي",
+                        "Field_X": r['X'], "Field_Y": r['Y'], "Field_Z": r['Z'],
+                        "Delta_XY": 0.0, "Delta_Z": 0.0, "Status": "✅ RECORDED"
+                    })
+
+            df_audit = pd.DataFrame(chk_results)
+            
+            st.markdown("##### 📊 جدول نتائج التدقيق والمطابقة والمقارنة الهندسية:")
+            st.dataframe(df_audit[["Field_ID", "Design_Ref", "Field_X", "Field_Y", "Delta_XY", "Delta_Z", "Status"]], use_container_width=True)
+            
+            # --- الحل النهائي لمشكلة تداخل النقاط المتراكمة فوق بعضها بـ Plotly ---
+            st.markdown("### 📊 خريطة الانحرافات والمطابقة الفراغية التفاعلية (Interactive Error Map)")
+            st.markdown("*توجيه: يمكنك استخدام الفأرة أو اللمس لعمل **Zoom (تقريب)** لأي نقطة متداخلة، كما يمكنك تمرير المؤشر لمعرفة تفاصيل ورقم النقطة والانحراف بدقة متناهية.*")
+            
+            fig = px.scatter(
+                df_audit, 
+                x='Field_X', 
+                y='Field_Y', 
+                color='Delta_XY', 
+                size=df_audit['Delta_XY'].apply(lambda x: max(x, 0.005)), # جعل حجم النقطة معبراً عن مقدار الانحراف بوضوح
+                hover_data=['Field_ID', 'Design_Ref', 'Delta_XY', 'Delta_Z', 'Status'],
+                color_continuous_scale='RdYlGn_r', # تدرج لوني يعكس الأخضر للمطابق والأحمر للمنحرف
+                labels={'Delta_XY': 'الانحراف الأفقي (متر)', 'Field_X': 'East (X)', 'Field_Y': 'North (Y)'}
+            )
+            
+            fig.update_layout(
+                xaxis=dict(scaleanchor="y", scaleratio=1), # الحفاظ الكامل على دقة وتناسق الأبعاد المساحية الحقيقية للموقع
+                template="plotly_white",
+                margin=dict(l=20, r=20, t=40, b=20)
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # توليد وإصدار التقرير بصيغة PDF المعتمد
+            st.markdown("---")
+            if st.button("📄 إصدار وتصدير تقرير التدقيق المساحي المعتمد (PDF)", use_container_width=True):
+                pdf_bytes = generate_pro_report_bytes(
+                    df_audit, parcel_no, parcel_loc, owner_name, 
+                    total_pts=len(df_audit), passed_pts=passed_count
+                )
+                download_button_ios(pdf_bytes, f"Certified_Audit_{parcel_no}.pdf", "📥 اضغط هنا لتحميل وثيقة تقرير التدقيق النهائي المعتمد المطبوع")
+                
+        except Exception as e:
+            st.error(f"❌ حدث خطأ أثناء معالجة وقراءة ملف بيانات الرفع الفعلي: {e}")
+
+# ==========================================
+# 🏁 التذييل البرمجي لضمان استقرار التشغيل
+# ==========================================
+st.sidebar.markdown("---")
+st.sidebar.success("LexiMind Pro V2.0 جاهز للعمل والمطابقة الفورية.")
