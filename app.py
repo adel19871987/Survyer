@@ -19,7 +19,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# واجهة مجملة للتطبيق
+# واجهة التطبيق الرئيسية
 st.markdown("""
     <div style="background-color: #1E3A8A; padding: 25px; border-radius: 15px; margin-bottom: 20px;">
         <h1 style="color: white; text-align: center; font-family: 'Arial';">🏗️ LexiMind Pro</h1>
@@ -66,17 +66,15 @@ def rotate_point(x, y, cx, cy, angle_deg):
     ny = cy + (x - cx) * math.sin(angle_rad) + (y - cy) * math.cos(angle_rad)
     return nx, ny
 
-# 🚀 ميزة الاحتراف: خوارزمية ترتيب المسار الأقصر (Nearest Neighbor)
+# خوارزمية ترتيب المسار الأقصر (Nearest Neighbor) لمنع الدوران العشوائي
 def optimize_survey_path(df):
     if len(df) < 2: return df
     unvisited = df.to_dict('records')
     optimized_path = []
-    # نبدأ من أول نقطة في الجدول
     current_pt = unvisited.pop(0)
     optimized_path.append(current_pt)
     
     while unvisited:
-        # البحث عن أقرب جار
         next_pt = min(unvisited, key=lambda p: math.hypot(p['East_X'] - current_pt['East_X'], p['North_Y'] - current_pt['North_Y']))
         unvisited.remove(next_pt)
         optimized_path.append(next_pt)
@@ -111,7 +109,6 @@ if uploaded_dxf:
         doc = ezdxf.readfile(temp_path)
         msp = doc.modelspace()
         
-        # Text extraction for smart naming
         text_pool = []
         for text_ent in msp.query('TEXT MTEXT'):
             try:
@@ -171,7 +168,7 @@ if uploaded_dxf:
         os.remove(temp_path)
         
         # ==========================================
-        # 📂 Suite Tabs (The 7 Tools)
+        # 📂 Suite Tabs (7 Complete Tools)
         # ==========================================
         tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
             "🗺️ 1. Quantities", "📍 2. Field Staking", "🔄 3. Shift & Rotate",
@@ -205,16 +202,14 @@ if uploaded_dxf:
                 cats_avail = df_all_points["Category"].unique()
                 sel_cat = st.multiselect("Select Categories to Stake:", cats_avail, default=cats_avail)
                 
-                # إعدادات الإزاحة والترتيب الذكي
                 col_cfg1, col_cfg2, col_cfg3 = st.columns([1, 1, 1])
                 off_x = col_cfg1.number_input("Shift ΔX (East):", value=0.0, step=0.1)
                 off_y = col_cfg2.number_input("Shift ΔY (North):", value=0.0, step=0.1)
-                use_tsp = col_cfg3.checkbox("🔄 Enable Smart Path Optimization", value=True, help="Reruns points to find shortest walking route.")
+                use_tsp = col_cfg3.checkbox("🔄 Enable Smart Path Optimization", value=True)
                 
                 if sel_cat:
                     df_stk = df_all_points[df_all_points['Category'].isin(sel_cat)].copy()
                     
-                    # 🚀 تطبيق الترتيب الذكي (TSP)
                     if use_tsp:
                         df_stk = optimize_survey_path(df_stk)
                         st.success("✅ Path Optimized: Points re-ordered to minimize walking distance.")
@@ -229,25 +224,21 @@ if uploaded_dxf:
                         
                     st.dataframe(df_stk[["Export_ID", "North_Y", "East_X", "Category"]], use_container_width=True)
 
-                    # --- 📝 محرك التقارير الهندسي المطور (PDF) - تم حل مشكلة الألوان هنا ---
                     if st.button("📥 Generate Professional Survey Report (PDF)", use_container_width=True):
                         try:
                             pdf_path = "Survey_Stakeout_Report.pdf"
                             c = canvas.Canvas(pdf_path, pagesize=A4)
                             width, height = A4
                             
-                            # تعريف الألوان بطريقة آمنة تتوافق مع كل إصدارات reportlab
-                            color_navy = colors.Color(30/255, 58/255, 138/255) # بديل #1E3A8A
-                            color_grey = colors.Color(229/255, 231/255, 235/255) # بديل #E5E7EB
+                            color_navy = colors.Color(30/255, 58/255, 138/255)
+                            color_grey = colors.Color(229/255, 231/255, 235/255)
                             
-                            # الهوية والترويسة
                             c.setFillColor(color_navy)
                             c.rect(0, height-80, width, 80, fill=1)
                             c.setFillColor(colors.white)
                             c.setFont("Helvetica-Bold", 22)
                             c.drawString(50, height-50, "LEXIMIND PRO | FIELD REPORT")
                             
-                            # ملخص المشروع
                             c.setFillColor(colors.black)
                             c.setFont("Helvetica-Bold", 12)
                             c.drawString(50, height-110, "1. PROJECT SUMMARY")
@@ -257,13 +248,11 @@ if uploaded_dxf:
                             c.drawString(60, height-160, f"Path Optimization: {'Enabled' if use_tsp else 'Disabled'}")
                             c.drawString(60, height-175, f"Applied Offset: X={off_x}m, Y={off_y}m")
 
-                            # جدول النقاط الاحترافي
                             y_table = height - 220
                             c.setFont("Helvetica-Bold", 12)
                             c.drawString(50, y_table, "2. DETAILED STAKING LIST")
                             
                             y_table -= 25
-                            # خلفية عناوين الجدول
                             c.setFillColor(color_grey)
                             c.rect(50, y_table-5, 500, 20, fill=1)
                             c.setFillColor(colors.black)
@@ -292,20 +281,18 @@ if uploaded_dxf:
                                 c.line(50, y_table-3, 550, y_table-3)
                                 y_table -= 18
                             
-                            # التوقيع
                             c.setFont("Helvetica-Bold", 10)
                             c.drawString(50, 40, "Surveyor Signature: _______________________")
                             c.drawString(350, 40, "Site Engineer: _______________________")
                             
                             c.save()
                             with open(pdf_path, "rb") as f:
-                                st.download_button("📥 Download Official PDF", f, pdf_path, "application/pdf")
+                                st.download_button("📥 Download Official PDF", f, pdf_path, "application/octet-stream")
                         except Exception as e: st.error(f"PDF Error: {e}")
                     
-                    # تصدير الملفات الرقمية
                     delim = ',' if device_type != "Topcon (TXT)" else ' '
                     txt_data = df_stk[["Export_ID", "North_Y", "East_X"]].to_csv(index=False, sep=delim, header=False)
-                    st.download_button(f"📥 Download Field File ({device_type})", txt_data, "Staking_Data.txt", "text/plain")
+                    st.download_button(f"📥 Download Field File ({device_type})", txt_data, "Staking_Data.txt", "application/octet-stream")
 
         with tab3:
             st.subheader("🔄 Transformation Matrix")
@@ -318,8 +305,10 @@ if uploaded_dxf:
                 if rot_ang != 0:
                     m_cx, m_cy = df_trans["East_X"].mean(), df_trans["North_Y"].mean()
                     rotated = [rotate_point(r["East_X"], r["North_Y"], m_cx, m_cy, -rot_ang) for _, r in df_trans.iterrows()]
-                    df_trans["East_X"] = [p[0] for p in rotated]; df_trans["North_Y"] = [p[1] for p in rotated]
-                df_trans["East_X"] += shift_e; df_trans["North_Y"] += shift_n
+                    df_trans["East_X"] = [p[0] for p in rotated]
+                    df_trans["North_Y"] = [p[1] for p in rotated]
+                df_trans["East_X"] += shift_e
+                df_trans["North_Y"] += shift_n
                 st.dataframe(df_trans[["Point_ID", "North_Y", "East_X", "Category"]], use_container_width=True)
 
         with tab4:
@@ -354,7 +343,8 @@ if uploaded_dxf:
             if structural_elements:
                 tot_a = pd.DataFrame(structural_elements)["Area"].sum()
                 st.info(f"Footprint Area: {round(tot_a, 2)} m²")
-                ngl = st.number_input("NGL Level:", value=1.0); target = st.number_input("Target Level:", value=0.0)
+                ngl = st.number_input("NGL Level:", value=1.0)
+                target = st.number_input("Target Level:", value=0.0)
                 vol = tot_a * abs(ngl - target)
                 st.error(f"Volume: {round(vol, 2)} m³")
 
@@ -366,7 +356,8 @@ if uploaded_dxf:
                 df_asb = pd.read_csv(asb_f, sep=s_char, header=None, names=["ID", "Y", "X", "Z"])
                 chk = []
                 for _, r in df_asb.iterrows():
-                    m_d = float('inf'); n_pt = None
+                    m_d = float('inf')
+                    n_pt = None
                     for _, dr in df_all_points.iterrows():
                         dst = math.hypot(r['X'] - dr['East_X'], r['Y'] - dr['North_Y'])
                         if dst < m_d: m_d = dst; n_pt = dr
