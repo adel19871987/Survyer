@@ -5,7 +5,9 @@ import os
 import math
 import re
 import base64
+from io import BytesIO
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
@@ -14,7 +16,7 @@ from reportlab.lib import colors
 # 🏗️ LexiMind Pro: Branding & UI Styling
 # ==========================================
 st.set_page_config(
-    page_title="LexiMind Pro | Survey Suite", 
+    page_title="LexiMind Pro | Survey Suite V2.0", 
     page_icon="🏗️", 
     layout="wide",
     initial_sidebar_state="expanded"
@@ -22,8 +24,8 @@ st.set_page_config(
 
 st.markdown("""
     <div style="background-color: #1E3A8A; padding: 25px; border-radius: 15px; margin-bottom: 20px;">
-        <h1 style="color: white; text-align: center; font-family: 'Arial';">🏗️ LexiMind Pro</h1>
-        <p style="color: #BFDBFE; text-align: center; font-size: 18px;">High-Performance Survey & Quantity Engineering Suite</p>
+        <h1 style="color: white; text-align: center; font-family: 'Arial';">🏗️ LexiMind Pro V2.0</h1>
+        <p style="color: #BFDBFE; text-align: center; font-size: 18px;">High-Performance Survey, As-Built Audit & Quantity Suite</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -107,6 +109,83 @@ def optimize_survey_path(df):
         current_pt = next_pt
     return pd.DataFrame(optimized_path)
 
+def generate_pro_report_bytes(df_audit, parcel, address, owner, total_pts, passed_pts):
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+    
+    # Header
+    c.setFillColor(colors.Color(30/255, 58/255, 138/255))
+    c.rect(0, height-80, width, 80, fill=1)
+    c.setFillColor(colors.white)
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(50, height-50, "LEXIMIND PRO | CERTIFIED AS-BUILT AUDIT REPORT")
+    
+    # Project Info
+    c.setFillColor(colors.black)
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(50, height-110, "1. PROJECT DETAILS:")
+    c.setFont("Helvetica", 10)
+    c.drawString(60, height-130, f"Owner: {owner}")
+    c.drawString(60, height-145, f"Parcel No: {parcel}")
+    c.drawString(60, height-160, f"Address/Location: {address}")
+    c.drawString(60, height-175, f"Date Generated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}")
+    
+    # Summary Stats
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(320, height-110, "2. AUDIT SUMMARY:")
+    c.setFont("Helvetica", 10)
+    c.drawString(330, height-130, f"Total Points Audited: {total_pts}")
+    c.drawString(330, height-145, f"Points Passed (Within Tolerance): {passed_pts}")
+    c.drawString(330, height-160, f"Points Failed: {total_pts - passed_pts}")
+    
+    # Table Header
+    y_table = height - 220
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(40, y_table, "Field ID")
+    c.drawString(100, y_table, "Design Ref")
+    c.drawString(180, y_table, "Easting(X)")
+    c.drawString(250, y_table, "Northing(Y)")
+    c.drawString(330, y_table, "Elev(Z)")
+    c.drawString(390, y_table, "Delta XY(m)")
+    c.drawString(460, y_table, "Delta Z(m)")
+    c.drawString(530, y_table, "Status")
+    c.line(40, y_table-5, 560, y_table-5)
+    
+    # Table Rows
+    y_table -= 20
+    c.setFont("Helvetica", 9)
+    
+    render_limit = min(500, len(df_audit))
+    for idx, r in df_audit.head(render_limit).iterrows():
+        if y_table < 50:
+            c.showPage()
+            y_table = height - 50
+            c.setFont("Helvetica", 9)
+            
+        c.drawString(40, y_table, str(r['Field_ID'])[:8])
+        c.drawString(100, y_table, str(r['Design_Ref'])[:12])
+        c.drawString(180, y_table, f"{r['Field_X']:.3f}")
+        c.drawString(250, y_table, f"{r['Field_Y']:.3f}")
+        c.drawString(330, y_table, f"{r['Field_Z']:.3f}")
+        c.drawString(390, y_table, f"{r['Delta_XY']:.3f}")
+        c.drawString(460, y_table, f"{r['Delta_Z']:.3f}")
+        
+        # Color coding status
+        if "✅" in str(r['Status']):
+            c.setFillColor(colors.green)
+        else:
+            c.setFillColor(colors.red)
+            
+        c.drawString(530, y_table, "PASS" if "✅" in str(r['Status']) else "FAIL")
+        c.setFillColor(colors.black)
+        
+        y_table -= 15
+        
+    c.save()
+    buffer.seek(0)
+    return buffer.getvalue()
+
 # ==========================================
 # ⚙️ Sidebar Settings
 # ==========================================
@@ -119,7 +198,8 @@ if st.sidebar.button("🔄 Reset Suite", use_container_width=True, type="primary
 st.sidebar.markdown("---")
 device_type = st.sidebar.selectbox("Device Format:", ["Leica (CSV)", "Topcon (TXT)", "Generic (CSV)"])
 id_format = st.sidebar.selectbox("Point ID Type:", ["Purely Numeric (101, 102...)", "Short Code (F56-1)", "Full Descriptive"])
-tolerance = st.sidebar.number_input("Tolerance (m):", value=0.02, step=0.01)
+tolerance_xy = st.sidebar.number_input("XY Tolerance (m):", value=0.02, step=0.01)
+tolerance_z = st.sidebar.number_input("Z Tolerance (m):", value=0.01, step=0.01)
 
 # ==========================================
 # 📁 DXF Processing (Step 1)
@@ -158,7 +238,8 @@ if uploaded_dxf:
                 if entity.dxftype() == 'LINE': grid_lines.append((entity.dxf.start, entity.dxf.end))
                 continue
             if entity.dxftype() == 'LWPOLYLINE':
-                vertices = [(v[0], v[1]) for v in entity.get_points()]
+                # Extract X, Y, and Z (if available)
+                vertices = [(v[0], v[1], v[2] if len(v)>2 else 0.0) for v in entity.get_points()]
                 if not vertices: continue
                 area = calculate_area(vertices)
                 perimeter = 0.0
@@ -186,7 +267,7 @@ if uploaded_dxf:
                 for i, v in enumerate(vertices):
                     all_points.append({
                         "Point_ID": f"{final_prefix}_P{i+1}", "Short_ID": f"{short_prefix}-{i+1}",
-                        "North_Y": v[1], "East_X": v[0], "Category": category,
+                        "North_Y": v[1], "East_X": v[0], "Elev_Z": v[2], "Category": category,
                         "Elem_CX": cx, "Elem_CY": cy, "Elem_Order": i + 1, "Layer_Name": layer
                     })
         
@@ -198,7 +279,7 @@ if uploaded_dxf:
         # ==========================================
         tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
             "🗺️ 1. Quantities", "📍 2. Field Staking", "🔄 3. Shift & Rotate",
-            "📐 4. Axis Gridlines", "🧱 5. Brickwork Master", "🚜 6. Earthworks", "🔍 7. As-Built Audit"
+            "📐 4. Axis Gridlines", "🧱 5. Brickwork", "🚜 6. Earthworks", "🔍 7. As-Built Audit V2"
         ])
         
         with tab1:
@@ -227,7 +308,7 @@ if uploaded_dxf:
             st.subheader("📍 Smart Field Stakeout Engine")
             if not df_all_points.empty:
                 all_layers = df_all_points["Layer_Name"].unique()
-                selected_layers = st.multiselect("🎯 Filter by AutoCAD Layer (Recommended for large files):", all_layers, default=all_layers)
+                selected_layers = st.multiselect("🎯 Filter by AutoCAD Layer:", all_layers, default=all_layers)
                 
                 col_cfg1, col_cfg2, col_cfg3 = st.columns([1, 1, 1])
                 off_x = col_cfg1.number_input("Shift ΔX (East):", value=0.0, step=0.1)
@@ -239,7 +320,7 @@ if uploaded_dxf:
                     st.info(f"📊 Selected Points: {len(df_stk)} rows out of {len(df_all_points)}")
                     
                     if use_tsp and len(df_stk) > 1000:
-                        st.warning("⚠️ High Point Count: Path optimization disabled automatically to prevent crashing your mobile browser.")
+                        st.warning("⚠️ High Point Count: Path optimization disabled automatically to prevent crashing.")
                         use_tsp = False
                     
                     if use_tsp and len(df_stk) <= 1000:
@@ -254,59 +335,11 @@ if uploaded_dxf:
                     else:
                         df_stk["Export_ID"] = df_stk["Point_ID"]
                         
-                    st.dataframe(df_stk[["Export_ID", "North_Y", "East_X", "Category", "Layer_Name"]], use_container_width=True)
+                    st.dataframe(df_stk[["Export_ID", "North_Y", "East_X", "Elev_Z", "Layer_Name"]], use_container_width=True)
 
-                    pdf_path = "Survey_Stakeout_Report.pdf"
-                    c = canvas.Canvas(pdf_path, pagesize=A4)
-                    width, height = A4
-                    
-                    c.setFillColor(colors.Color(30/255, 58/255, 138/255))
-                    c.rect(0, height-80, width, 80, fill=1)
-                    c.setFillColor(colors.white)
-                    c.setFont("Helvetica-Bold", 20)
-                    c.drawString(50, height-50, "LEXIMIND PRO | HIGH-VOLUME REPORT")
-                    
-                    c.setFillColor(colors.black)
-                    c.setFont("Helvetica-Bold", 12)
-                    c.drawString(50, height-110, "1. PROJECT SUMMARY")
-                    c.setFont("Helvetica", 10)
-                    c.drawString(60, height-130, f"Date: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}")
-                    c.drawString(60, height-145, f"Total Rendered Points: {len(df_stk)}")
-                    
-                    y_table = height - 190
-                    c.setFont("Helvetica-Bold", 11)
-                    c.drawString(50, y_table, "Point ID | Easting (X) | Northing (Y) | Layer")
-                    c.line(50, y_table-5, 550, y_table-5)
-                    
-                    y_table -= 20
-                    c.setFont("Helvetica", 9)
-                    
-                    render_limit = min(500, len(df_stk))
-                    for idx, r in df_stk.head(render_limit).iterrows():
-                        if y_table < 50:
-                            c.showPage()
-                            y_table = height - 50
-                            c.setFont("Helvetica", 9)
-                        c.drawString(60, y_table, str(r['Export_ID']))
-                        c.drawString(180, y_table, f"{r['East_X']:.3f}")
-                        c.drawString(300, y_table, f"{r['North_Y']:.3f}")
-                        c.drawString(420, y_table, str(r['Layer_Name'])[:15])
-                        y_table -= 15
-                    
-                    if len(df_stk) > 500:
-                        c.setFont("Helvetica-Bold", 10)
-                        c.setFillColor(colors.red)
-                        c.drawString(50, y_table, f"... Note: PDF preview limited to first 500 points. Total file contains {len(df_stk)} points.")
-                    
-                    c.save()
-                    
-                    with open(pdf_path, "rb") as f:
-                        pdf_bytes = f.read()
-                    download_button_ios(pdf_bytes, pdf_path, "📥 Download Official PDF Report (iOS Safe)")
-                    
                     delim = ',' if device_type != "Topcon (TXT)" else ' '
-                    txt_data = df_stk[["Export_ID", "North_Y", "East_X"]].to_csv(index=False, sep=delim, header=False)
-                    download_button_ios(txt_data, "Staking_Data.txt", f"📥 Download FULL Field File ({device_type})", is_text=True)
+                    txt_data = df_stk[["Export_ID", "North_Y", "East_X", "Elev_Z"]].to_csv(index=False, sep=delim, header=False)
+                    download_button_ios(txt_data, "Staking_Data.txt", f"📥 Download Field File ({device_type})", is_text=True)
 
         with tab3:
             st.subheader("🔄 Transformation Matrix")
@@ -323,7 +356,7 @@ if uploaded_dxf:
                     df_trans["North_Y"] = [p[1] for p in rotated]
                 df_trans["East_X"] += shift_e
                 df_trans["North_Y"] += shift_n
-                st.dataframe(df_trans[["Point_ID", "North_Y", "East_X", "Category", "Layer_Name"]], use_container_width=True)
+                st.dataframe(df_trans[["Point_ID", "North_Y", "East_X", "Layer_Name"]], use_container_width=True)
 
         with tab4:
             st.subheader("📐 Axis Gridline Intersections")
@@ -363,44 +396,97 @@ if uploaded_dxf:
                 target = st.number_input("Target Level:", value=0.0, key="tgt_v")
                 vol = tot_a * abs(ngl - target)
                 st.error(f"Volume: {round(vol, 2)} m³")
-            else: st.info("No structural elements found to calculate footprint area.")
+            else: st.info("No structural elements found.")
 
         with tab7:
             # ========================================================
-            # 🔍 التحديث الذكي والديناميكي لحل مشكلة الفواصل في الآيفون
+            # 🔍 V2.0: As-Built Audit (Heatmap, Z-Level, Pro PDF)
             # ========================================================
-            st.subheader("🔍 As-Built Audit Engine")
+            st.subheader("🔍 As-Built Audit Engine V2.0")
+            
+            # Project Data Inputs
+            with st.expander("📝 Project details for PDF Report", expanded=True):
+                col_p1, col_p2, col_p3 = st.columns(3)
+                parcel_no = col_p1.text_input("Parcel No (رقم القسيمة):", "Plot-101")
+                owner_name = col_p2.text_input("Owner Name (المالك):", "Mr. Client")
+                parcel_loc = col_p3.text_input("Address (العنوان):", "Kuwait, District X")
+                
             asb_f = st.file_uploader("Upload Field Survey (CSV/TXT):", type=["csv", "txt"], key=f"as_built_{st.session_state['asbuilt_key']}")
+            
             if asb_f:
                 try:
-                    # قراءة السطر الأول لفحص نوع الفاصل تلقائياً وديناميكياً
+                    # Smart Separator Detection
                     first_line = asb_f.readline().decode('utf-8-sig', errors='ignore')
-                    asb_f.seek(0) # إعادة المؤشر لبداية الملف
-                    
-                    # اختيار الفاصل بناءً على محتوى الملف وليس مجرد اسم الصيغة
+                    asb_f.seek(0)
                     s_char = ',' if ',' in first_line else r'\s+'
                     
                     df_asb = pd.read_csv(asb_f, sep=s_char, header=None, names=["ID", "Y", "X", "Z"], engine='python')
-                    
-                    # تحويل القيم لأرقام وتنظيف الأسطر الفارغة
                     df_asb['X'] = pd.to_numeric(df_asb['X'], errors='coerce')
                     df_asb['Y'] = pd.to_numeric(df_asb['Y'], errors='coerce')
+                    df_asb['Z'] = pd.to_numeric(df_asb['Z'], errors='coerce').fillna(0.0)
                     df_asb = df_asb.dropna(subset=['X', 'Y'])
                     
                     chk = []
-                    for _, r in df_asb.head(500).iterrows():
+                    passed_count = 0
+                    
+                    for _, r in df_asb.iterrows():
                         m_d = float('inf')
                         n_pt = None
+                        
+                        # Find closest design point
                         for _, dr in df_all_points.iterrows():
                             dst = math.hypot(r['X'] - dr['East_X'], r['Y'] - dr['North_Y'])
-                            if dst < m_d: m_d = dst; n_pt = dr
+                            if dst < m_d: 
+                                m_d = dst
+                                n_pt = dr
+                                
+                        dz = abs(r['Z'] - n_pt['Elev_Z']) if n_pt is not None else 999.0
+                        
+                        is_pass = (m_d <= tolerance_xy) and (dz <= tolerance_z)
+                        if is_pass: passed_count += 1
+                        
                         chk.append({
-                            "Field ID": r['ID'], 
-                            "Design Ref": n_pt['Point_ID'] if n_pt is not None else "N/A", 
-                            "Delta (m)": round(m_d, 3) if m_d != float('inf') else 999, 
-                            "Status": "✅" if m_d <= tolerance else "❌"
+                            "Field_ID": r['ID'], 
+                            "Design_Ref": n_pt['Point_ID'] if n_pt is not None else "N/A",
+                            "Field_X": r['X'],
+                            "Field_Y": r['Y'],
+                            "Field_Z": r['Z'],
+                            "Delta_XY": m_d,
+                            "Delta_Z": dz,
+                            "Status": "✅ PASS" if is_pass else "❌ FAIL"
                         })
-                    st.dataframe(pd.DataFrame(chk), use_container_width=True)
+                    
+                    df_audit = pd.DataFrame(chk)
+                    st.dataframe(df_audit[["Field_ID", "Design_Ref", "Delta_XY", "Delta_Z", "Status"]], use_container_width=True)
+                    
+                    # ---------------------------------------------
+                    # 📊 Heatmap Generation
+                    # ---------------------------------------------
+                    st.markdown("### 📊 Spatial Error Heatmap (خريطة الانحرافات)")
+                    fig, ax = plt.subplots(figsize=(8, 5))
+                    
+                    # Plot all points, color by Delta_XY
+                    sc = ax.scatter(df_audit['Field_X'], df_audit['Field_Y'], 
+                                    c=df_audit['Delta_XY'], cmap='RdYlGn_r', 
+                                    s=50, edgecolor='k', vmin=0, vmax=tolerance_xy*2)
+                    
+                    plt.colorbar(sc, label='XY Deviation (m)')
+                    ax.set_aspect('equal')
+                    ax.set_title("Field Points colored by Deviation Magnitude")
+                    ax.grid(True, linestyle='--', alpha=0.5)
+                    st.pyplot(fig)
+                    plt.close(fig)
+                    
+                    # ---------------------------------------------
+                    # 📄 PDF Report Generation
+                    # ---------------------------------------------
+                    st.markdown("### 📄 Export Certified Report")
+                    pdf_bytes = generate_pro_report_bytes(
+                        df_audit, parcel_no, parcel_loc, owner_name, 
+                        total_pts=len(df_audit), passed_pts=passed_count
+                    )
+                    download_button_ios(pdf_bytes, "Certified_Audit_Report.pdf", "📥 Download Official Audit PDF")
+
                 except Exception as e:
                     st.error(f"Error parsing field data: {e}")
 
