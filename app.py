@@ -6,8 +6,8 @@ import math
 import re
 import base64
 from io import BytesIO
-import matplotlib.pyplot as plt
 import plotly.express as px
+import plotly.graph_objects as go
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
@@ -194,6 +194,13 @@ if st.sidebar.button("🔄 إعادة تعيين وتنظيف النظام", use
 device_type = st.sidebar.selectbox("صيغة التصدير للأجهزة الميدانية:", ["Leica (CSV)", "Topcon (TXT)", "Sokkia (CSV)"])
 tolerance_z = st.sidebar.number_input("حد المسامحة الرأسي المسموح Z (متر):", value=0.01, step=0.01, format="%.3f")
 
+# ربط ديناميكي عالمي: إدخال مصفوفة التحويل من الشريط الجانبي لتسمع في كل مكان تلقائياً
+st.sidebar.markdown("---")
+st.sidebar.header("🔄 مصفوفة التحويل العالمية")
+shift_e = st.sidebar.number_input("مقدار الإزاحة للشرق (Shift East):", value=0.0, format="%.3f")
+shift_n = st.sidebar.number_input("مقدار الإزاحة للشمال (Shift North):", value=0.0, format="%.3f")
+rot_ang = st.sidebar.number_input("زاوية تدوير المخطط (Rotation Angle):", value=0.0, format="%.4f")
+
 # ==========================================
 # 📁 الخطوة الأساسية: قراءة وتحليل ملف الأوتوكاد DXF
 # ==========================================
@@ -201,6 +208,7 @@ st.subheader("📁 الخطوة الأولى: رفع المخطط الهندسي
 uploaded_dxf = st.file_uploader("ارفع ملف المخطط بصيغة DXF فقط:", type=["dxf"], key=f"dxf_{st.session_state['dxf_key']}")
 
 # تهيئة جداول تخزين البيانات المستخرجة من DXF لمنع مشاكل التحميل
+df_raw_points = pd.DataFrame()
 df_all_points = pd.DataFrame()
 structural_elements = []
 grid_lines = []
@@ -215,9 +223,24 @@ if uploaded_dxf:
         doc = ezdxf.readfile(temp_path)
         msp = doc.modelspace()
         
-        # 1. تجميع وتصفية نصوص الأوتوكاد للربط الذكي بالنقاط
+        # 🚀 [تعديل الميزة الأولى] محرك التفكيك الذكي للـ Blocks (Virtual Explode)
+        flat_ents = []
+        for ent in msp:
+            if ent.dxftype() == 'INSERT':
+                try:
+                    for v_ent in ent.virtual_entities():
+                        if not hasattr(v_ent.dxf, 'layer') or v_ent.dxf.layer == '0':
+                            v_ent.dxf.layer = ent.dxf.layer
+                        flat_ents.append(v_ent)
+                except:
+                    flat_ents.append(ent)
+            else:
+                flat_ents.append(ent)
+        
+        # 1. تجميع وتصفية نصوص الأوتوكاد للربط الذكي بالنقاط من العناصر المفككة
         text_pool = []
-        for text_ent in msp.query('TEXT MTEXT'):
+        text_entities = [e for e in flat_ents if e.dxftype() in ('TEXT', 'MTEXT')]
+        for text_ent in text_entities:
             try:
                 raw_txt = text_ent.dxf.insert
                 txt_str = text_ent.dxf.text if text_ent.dxftype() == 'TEXT' else text_ent.text
@@ -229,8 +252,9 @@ if uploaded_dxf:
         # 2. استخراج وفك شفرات العناصر الهندسية (LWPOLYLINE / LINE)
         all_points = []
         category_counters = {"Footings": 0, "Columns": 0, "Beams": 0, "Walls": 0, "Boundary": 0, "Others": 0}
+        geo_entities = [e for e in flat_ents if e.dxftype() in ('LWPOLYLINE', 'LINE')]
         
-        for entity in msp.query('LWPOLYLINE LINE'):
+        for entity in geo_entities:
             layer = entity.dxf.layer
             category = classify_layer(layer)
             
@@ -290,9 +314,37 @@ if uploaded_dxf:
                     })
         
         if all_points:
-            df_all_points = pd.DataFrame(all_points).drop_duplicates(subset=['North_Y', 'East_X'])
+            df_raw_points = pd.DataFrame(all_points).drop_duplicates(subset=['North_Y', 'East_X'])
+            df_all_points = df_raw_points.copy()
+            
+            # 🚀 [تعديل الميزة الثالثة] تطبيق المصفوفة جغرافياً بشكل حي وعالمي بمجرد استخراج البيانات
+            if rot_ang != 0:
+                m_cx, m_cy = df_all_points["East_X"].mean(), df_all_points["North_Y"].mean()
+                rotated = [rotate_point(r["East_X"], r["North_Y"], m_cx, m_cy, -rot_ang) for _, r in df_all_points.iterrows()]
+                df_all_points["East_X"] = [p[0] for p in rotated]
+                df_all_points["North_Y"] = [p[1] for p in rotated]
+            
+            df_all_points["East_X"] += shift_e
+            df_all_points["North_Y"] += shift_n
+            
+            # تدوير وإزاحة خطوط المحاور أيضاً لتتناسب الحسابات تلقائياً في التبويبات الأخرى
+            if grid_lines:
+                transformed_grid_lines = []
+                g_cx = df_raw_points["East_X"].mean()
+                g_cy = df_raw_points["North_Y"].mean()
+                class TransformedPoint:
+                    def __init__(self, x, y): self.x = x; self.y = y
+                for start, end in grid_lines:
+                    sx, sy = start.x, start.y
+                    ex, ey = end.x, end.y
+                    if rot_ang != 0:
+                        sx, sy = rotate_point(sx, sy, g_cx, g_cy, -rot_ang)
+                        ex, ey = rotate_point(ex, ey, g_cx, g_cy, -rot_ang)
+                    transformed_grid_lines.append((TransformedPoint(sx + shift_e, sy + shift_n), TransformedPoint(ex + shift_e, ey + shift_n)))
+                grid_lines = transformed_grid_lines
+
         os.remove(temp_path)
-        st.success(f"✅ تم تحليل وهندسة ملف الأوتوكاد بنجاح! تم فك وتصنيف {len(df_all_points)} نقطة هندسية.")
+        st.success(f"✅ تم تحليل وهندسة ملف الأوتوكاد بنجاح (وفك البلوكات المكتشفة تلقائياً)! تم استخراج وتصنيف {len(df_all_points)} نقطة هندسية معدلة.")
     except Exception as e:
         st.error(f"❌ حدث خطأ أثناء تحليل ملف DXF: {e}")
 
@@ -324,18 +376,26 @@ with tab1:
             
             st.markdown("##### 📈 جدول حصر الكميات المستخرجة")
             st.dataframe(summary, use_container_width=True)
+            
         with col_q2:
-            st.markdown("##### 📍 توزيع العناصر الإنشائية المكتشفة في المخطط")
-            fig, ax = plt.subplots(figsize=(6, 4.5))
-            sample_df = df_all_points.sample(n=min(800, len(df_all_points)))
-            for cat in sample_df['Category'].unique():
-                c_data = sample_df[sample_df['Category'] == cat]
-                ax.scatter(c_data['East_X'], c_data['North_Y'], label=cat, s=12)
-            ax.set_aspect('equal')
-            ax.legend(fontsize='small', loc='upper right')
-            ax.grid(True, alpha=0.3)
-            st.pyplot(fig)
-            plt.close(fig)
+            st.markdown("##### 📍 توزيع العناصر الإنشائية (خريطة تفاعلية بالكامل مع دعم التكبير واللمس) 🗺️")
+            sample_df = df_all_points.sample(n=min(1200, len(df_all_points)))
+            
+            # 🚀 [تعديل الميزة الثانية] استبدال matplotlib بـ Plotly الخريطة التفاعلية بالكامل
+            fig1 = px.scatter(
+                sample_df, x='East_X', y='North_Y', color='Category',
+                hover_data=['Point_ID', 'Layer_Name', 'Elev_Z'],
+                labels={'East_X': 'East (X)', 'North_Y': 'North (Y)'}
+            )
+            fig1.update_traces(marker=dict(size=6, opacity=0.85, line=dict(width=0.5, color='DarkSlateGrey')))
+            fig1.update_layout(
+                dragmode='zoom', 
+                template="plotly_white", 
+                margin=dict(l=0, r=0, t=10, b=0),
+                xaxis=dict(scaleanchor="y", scaleratio=1)
+            )
+            fig1.update_layout(modebar_add=['zoomIn2d', 'zoomOut2d', 'pan2d', 'resetScale2d'])
+            st.plotly_chart(fig1, use_container_width=True)
     else:
         st.info("💡 يرجى رفع ملف المخطط (DXF) في الأعلى لتفعيل حساب كميات القواعد والأعمدة تلقائياً.")
 
@@ -349,8 +409,8 @@ with tab2:
         selected_layers = st.multiselect("🎯 اختر الطبقات (Layers) المراد استخراج نقاطها للتوقيع:", all_layers, default=all_layers)
         
         col_cfg1, col_cfg2, col_cfg3 = st.columns(3)
-        off_x = col_cfg1.number_input("إزاحة مضافة لمحور الشرق (ΔX Offset):", value=0.0, step=0.1)
-        off_y = col_cfg2.number_input("إزاحة مضافة لمحور الشمال (ΔY Offset):", value=0.0, step=0.1)
+        off_x = col_cfg1.number_input("إزاحة إضافية لمحور الشرق (ΔX Offset):", value=0.0, step=0.1)
+        off_y = col_cfg2.number_input("إزاحة إضافية لمحور الشمال (ΔY Offset):", value=0.0, step=0.1)
         use_tsp = col_cfg3.checkbox("🔄 تفعيل خوارزمية المسار الذكي المساحي الأقصر", value=True)
         
         if selected_layers:
@@ -377,23 +437,12 @@ with tab2:
 with tab3:
     st.subheader("🔄 معالج تحويل، تدوير، وإزاحة الإحداثيات الهندسية")
     if not df_all_points.empty:
-        col_t1, col_t2, col_t3 = st.columns(3)
-        shift_e = col_t1.number_input("مقدار الإزاحة للشرق (Shift East):", value=0.0, format="%.3f")
-        shift_n = col_t2.number_input("مقدار الإزاحة للشمال (Shift North):", value=0.0, format="%.3f")
-        rot_ang = col_t3.number_input("زاوية تدوير المخطط (Rotation Angle - بالدرجات):", value=0.0, format="%.4f")
+        df_compare = df_raw_points.copy().rename(columns={'East_X': 'Original_X', 'North_Y': 'Original_Y'})
+        df_compare['Transformed_X'] = df_all_points['East_X']
+        df_compare['Transformed_Y'] = df_all_points['North_Y']
         
-        df_trans = df_all_points.copy()
-        if rot_ang != 0:
-            m_cx, m_cy = df_trans["East_X"].mean(), df_trans["North_Y"].mean()
-            rotated = [rotate_point(r["East_X"], r["North_Y"], m_cx, m_cy, -rot_ang) for _, r in df_trans.iterrows()]
-            df_trans["East_X"] = [p[0] for p in rotated]
-            df_trans["North_Y"] = [p[1] for p in rotated]
-        
-        df_trans["East_X"] += shift_e
-        df_trans["North_Y"] += shift_n
-        
-        st.markdown("##### 🧮 الإحداثيات الجديدة بعد تطبيق مصفوفة التحويل:")
-        st.dataframe(df_trans[["Point_ID", "North_Y", "East_X", "Elev_Z", "Category"]], use_container_width=True)
+        st.markdown("##### 🧮 الإحداثيات والتحويلات الحية النشطة بالمشروع (مقارنة الإحداثي الأصلي والجديد المحول من القائمة الجانبية):")
+        st.dataframe(df_compare[["Point_ID", "Layer_Name", "Original_X", "Original_Y", "Transformed_X", "Transformed_Y"]], use_container_width=True)
     else:
         st.info("💡 يرجى رفع ملف المخطط (DXF) لتطبيق التحويلات الحسابية والتدوير المباشر.")
 
@@ -422,7 +471,7 @@ with tab4:
                         
             if intersections:
                 df_inter = pd.DataFrame(intersections, columns=["Intersection_X", "Intersection_Y"]).drop_duplicates()
-                st.success(f"🎯 تم العثور على {len(df_inter)} نقطة تقاطع محاور رئيسية في المخطط.")
+                st.success(f"🎯 تم العثور على {len(df_inter)} نقطة تقاطع محاور رئيسية بناءً على الإحداثيات المحولة النشطة.")
                 st.dataframe(df_inter, use_container_width=True)
             else: 
                 st.warning("⚠️ تم التعرف على طبقة المحاور، ولكن لم يتم العثور على تقاطعات هندسية مباشرة بين الخطوط المتاحة.")
@@ -524,13 +573,13 @@ with tab7:
                 else:
                     return "❌ خارج السماحية (> 5 ملم)"
             
-            # الحالة الأولى: وجود ملف أوتوكاد DXF للقيام بالمقارنة الدقيقة تلقائياً
+            # الحالة الأولى: وجود ملف أوتوكاد DXF للقيام بالمقارنة الدقيقة تلقائياً مع تتبع الإحداثيات النشطة المعدلة جغرافياً
             if not df_all_points.empty:
                 for _, r in df_asb.iterrows():
                     min_dist = float('inf')
                     nearest_design_point = None
                     
-                    # البحث التلقائي عن أقرب نقطة تصميمية مرجعية
+                    # البحث التلقائي عن أقرب نقطة تصميمية مرجعية محولة
                     for _, dr in df_all_points.iterrows():
                         dst = math.hypot(r['X'] - dr['East_X'], r['Y'] - dr['North_Y'])
                         if dst < min_dist: 
